@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{SYSTEM_NAME}} — Architecture Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #7d8590; --accent: #58a6ff;
+    --green: #3fb950; --yellow: #d29922; --orange: #f0883e;
+    --purple: #bc8cff; --red: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+
+  /* Layout */
+  .shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .main { padding: 32px; overflow-y: auto; }
+
+  /* Sidebar */
+  .logo { padding: 0 20px 20px; border-bottom: 1px solid var(--border); }
+  .logo h2 { font-size: 14px; font-weight: 600; color: var(--accent); }
+  .logo span { font-size: 11px; color: var(--muted); }
+  nav { padding: 16px 0; }
+  nav a { display: flex; align-items: center; gap: 8px; padding: 6px 20px; font-size: 13px; color: var(--muted); text-decoration: none; transition: all 0.15s; cursor: pointer; border: none; background: none; width: 100%; text-align: left; }
+  nav a:hover, nav a.active { color: var(--text); background: rgba(88,166,255,0.08); }
+  nav a .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .nav-section { padding: 12px 20px 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+
+  /* Header */
+  .page-header { margin-bottom: 28px; }
+  .page-header h1 { font-size: 22px; font-weight: 700; }
+  .page-header p { color: var(--muted); font-size: 14px; margin-top: 4px; }
+
+  /* Cards */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+  .stat-value { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* Diagrams */
+  .diagram-container { overflow-x: auto; }
+  .mermaid { min-width: 300px; }
+  pre.mermaid { text-align: center; }
+
+  /* Feature list */
+  .feature-list { list-style: none; }
+  .feature-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .feature-item:last-child { border-bottom: none; }
+  .feature-name { flex: 1; font-weight: 500; }
+  .feature-meta { font-size: 12px; color: var(--muted); }
+  .progress-bar { width: 80px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+  /* Tech stack tags */
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag { padding: 3px 10px; border-radius: 20px; font-size: 12px; background: rgba(88,166,255,0.1); color: var(--accent); border: 1px solid rgba(88,166,255,0.2); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab { padding: 8px 16px; font-size: 13px; cursor: pointer; border: none; background: none; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.15s; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Views */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* Status badges */
+  .badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+  .badge-complete { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-progress { background: rgba(240,136,62,0.15); color: var(--orange); }
+  .badge-planned { background: rgba(125,133,144,0.15); color: var(--muted); }
+
+  /* Decisions */
+  .decision { padding: 10px 14px; border-left: 3px solid var(--purple); background: rgba(188,140,255,0.05); border-radius: 0 6px 6px 0; margin-bottom: 8px; font-size: 13px; }
+
+  /* Components table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid rgba(48,54,61,0.5); }
+  tr:last-child td { border-bottom: none; }
+  .type-service { color: var(--accent); }
+  .type-module { color: var(--green); }
+  .type-store { color: var(--yellow); }
+  .type-external { color: var(--orange); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <h2>{{SYSTEM_NAME}}</h2>
+      <span>Architecture Dashboard</span>
+    </div>
+    <nav>
+      <div class="nav-section">Views</div>
+      <button class="nav-link active" onclick="showView('overview')">
+        <span class="dot" style="background:#58a6ff"></span> Overview
+      </button>
+      <button class="nav-link" onclick="showView('services')">
+        <span class="dot" style="background:#3fb950"></span> Services
+      </button>
+      <button class="nav-link" onclick="showView('modules')">
+        <span class="dot" style="background:#bc8cff"></span> Modules
+      </button>
+      <div class="nav-section">Flows</div>
+      {{FLOW_NAV}}
+      <div class="nav-section">Features</div>
+      <button class="nav-link" onclick="showView('features')">
+        <span class="dot" style="background:#d29922"></span> All Features
+      </button>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- OVERVIEW VIEW -->
+    <div id="view-overview" class="view active">
+      <div class="page-header">
+        <h1>System Overview</h1>
+        <p>{{DESCRIPTION}}</p>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="stat-value">{{TOTAL_FEATURES}}</div><div class="stat-label">Features</div></div>
+        <div class="stat"><div class="stat-value">{{COMPLETE_FEATURES}}</div><div class="stat-label">Complete</div></div>
+        <div class="stat"><div class="stat-value">{{TOTAL_TASKS_DONE}}</div><div class="stat-label">Tasks Done</div></div>
+        <div class="stat"><div class="stat-value">{{TOTAL_TASKS}}</div><div class="stat-label">Total Tasks</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">System Architecture</div>
+        <div class="diagram-container">
+          <pre class="mermaid">{{OVERVIEW_DIAGRAM}}</pre>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <div class="card">
+          <div class="card-title">Tech Stack</div>
+          <div class="tags">{{TECH_TAGS}}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Key Decisions</div>
+          {{DECISIONS}}
+        </div>
+      </div>
+    </div>
+
+    <!-- SERVICES VIEW -->
+    <div id="view-services" class="view">
+      <div class="page-header">
+        <h1>Services Map</h1>
+        <p>Service-to-service relationships and data flow</p>
+      </div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">{{SERVICES_DIAGRAM}}</pre>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Components</div>
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>{{COMPONENTS_ROWS}}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- MODULES VIEW -->
+    <div id="view-modules" class="view">
+      <div class="page-header">
+        <h1>Module Breakdown</h1>
+        <p>Code organization by domain and layer</p>
+      </div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">{{MODULES_DIAGRAM}}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- FLOW VIEWS -->
+    {{FLOW_VIEWS}}
+
+    <!-- FEATURES VIEW -->
+    <div id="view-features" class="view">
+      <div class="page-header">
+        <h1>Features</h1>
+        <p>All spec-defined features and their progress</p>
+      </div>
+      <div class="card">
+        <ul class="feature-list">{{FEATURE_ROWS}}</ul>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+mermaid.initialize({ startOnLoad: true, theme: 'dark', themeVariables: { background: '#161b22', primaryColor: '#1f6feb', primaryTextColor: '#e6edf3', lineColor: '#58a6ff' }});
+
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  document.getElementById('view-' + name)?.classList.add('active');
+  event.currentTarget.classList.add('active');
+  mermaid.run();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "name": "sdd-kit",
+  "version": "0.2.0",
+  "description": "Spec-Driven Development CLI — language-agnostic, works with any project",
+  "keywords": ["sdd", "spec-driven", "ai", "claude", "fastapi", "react", "architecture"],
+  "author": "iCurbe / Cognidata <hello@icurbe.com>",
+  "license": "MIT",
+  "homepage": "https://github.com/icurbe/sdd-kit",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/icurbe/sdd-kit.git"
+  },
+  "type": "module",
+  "bin": {
+    "sdd": "./bin/sdd.js"
+  },
+"files": ["bin/", "src/", "templates/"],
+  "scripts": {
+    "test": "node --test src/**/*.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "ora": "^8.1.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
