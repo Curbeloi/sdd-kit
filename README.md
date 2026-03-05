@@ -28,8 +28,31 @@ Requires Node.js >= 18 and [Claude Code](https://docs.anthropic.com/en/docs/clau
 
 ## Quick start
 
+### Existing project (already has code)
+
+If you have an existing codebase and want to document it first:
+
 ```bash
-# 1. Initialize SDD in your project
+# 1. Document your existing code modules
+sdd spec document src/
+sdd spec document src/auth/
+sdd spec document src/services/api.ts
+
+# 2. Generate architecture views from what exists
+sdd arch
+
+# 3. Initialize SDD (creates steering docs + updates CLAUDE.md)
+#    Use --auto to generate steering from module specs
+sdd init --auto
+
+# 4. Now create specs for new features
+sdd spec create "Add real-time notifications" --size medium
+```
+
+### New project (starting from scratch)
+
+```bash
+# 1. Initialize SDD structure
 sdd init
 
 # 2. Edit the steering files with your project context
@@ -40,12 +63,35 @@ sdd init
 # 3. Create your first spec
 sdd spec create "JWT authentication for API endpoints" --size medium
 
-# 4. Check progress
+# 4. Execute tasks from the spec
+sdd spec execute feat-jwt-authentication
+
+# 5. Check progress
 sdd spec status
 
-# 5. Generate architecture views
+# 6. Generate architecture views
 sdd arch
 ```
+
+## How documentation stays up to date
+
+sdd-kit keeps documentation in sync with code through **automatic refresh** at every step:
+
+| Event | What gets updated |
+|-------|-------------------|
+| `sdd spec execute` completes a task | Module spec for the changed directory is refreshed, steering docs are updated |
+| `sdd spec create` generates a new spec | Steering docs are updated with the new feature |
+| `sdd spec refresh` (manual) | All module specs are regenerated from current code |
+| `sdd arch` | Architecture views + dashboard rebuilt from all specs |
+
+**Living documentation flow:**
+
+```
+Code changes --> module specs update --> steering docs update --> arch views update
+     (auto)           (auto)                 (auto)                (on demand)
+```
+
+Module specs (`specs/_modules/`) are auto-generated per directory. Steering docs (`.claude/steering/`) are auto-refreshed after spec operations. Architecture views (`specs/_arch/`) are rebuilt on `sdd arch`. The only manual step is running `sdd arch` when you want an updated dashboard.
 
 ## How it works
 
@@ -53,12 +99,17 @@ sdd-kit creates and manages structured Markdown specs in your repo:
 
 ```
 your-project/
+├── CLAUDE.md                  # Auto-updated with SDD section on `sdd init`
 ├── .claude/
-│   └── steering/              # Project context (memory bank)
+│   └── steering/              # Project context (auto-refreshed)
 │       ├── product.md         # Vision, users, goals
 │       ├── tech.md            # Stack, infra, constraints
 │       └── structure.md       # Code organization, conventions
 ├── specs/
+│   ├── _modules/              # Living documentation (auto-generated)
+│   │   ├── src--auth.md       # One spec per directory
+│   │   ├── src--services.md
+│   │   └── ...
 │   ├── features/              # One folder per feature
 │   │   └── feat-jwt-auth/
 │   │       ├── requirements.md    # User stories + acceptance criteria
@@ -66,6 +117,7 @@ your-project/
 │   │       └── tasks.md           # Atomic tasks with checkboxes
 │   └── _arch/                 # Generated architecture views
 │       ├── architecture.md    # Mermaid diagrams (renders on GitHub)
+│       ├── architecture.json  # Structured summary data
 │       └── dashboard.html     # Interactive visual dashboard
 ```
 
@@ -75,11 +127,34 @@ Everything is Markdown. Everything lives in git. No lock-in.
 
 ### `sdd init`
 
-Scaffolds the SDD structure in your project. Creates `.claude/steering/` with template files and `specs/features/` directory. Safe to run multiple times — skips existing files.
+Scaffolds the SDD structure in your project. Creates `.claude/steering/` with template files, `specs/features/` directory, and adds an SDD section to `CLAUDE.md` so Claude always knows about your documentation.
 
 ```bash
+# Template steering docs (manual edit)
 sdd init
+
+# Auto-generate steering from existing module specs
+sdd init --auto
 ```
+
+Safe to run multiple times — skips existing steering files, updates CLAUDE.md section idempotently.
+
+### `sdd spec document <path>`
+
+Reverse-engineers existing code into a module spec. This is the starting point for existing projects — document what you have before planning what to build.
+
+```bash
+# Document a directory
+sdd spec document src/auth/
+
+# Document a specific file
+sdd spec document app/services/rag_service.py --name rag-service
+
+# Without Claude Code
+sdd spec document src/components/ --prompt-only
+```
+
+Output goes to `specs/_modules/`. These specs are used as context for `sdd arch`, `sdd init --auto`, and `sdd spec create`.
 
 ### `sdd spec create <description>`
 
@@ -135,7 +210,7 @@ Indicators: **R** = requirements.md, **D** = design.md, **T** = tasks.md (green 
 
 ### `sdd spec execute <spec-name>`
 
-Executes the next pending task via Claude Code. Sends the task description along with requirements and design context so Claude has full understanding. Falls back to saving a prompt file if Claude Code is not installed.
+Executes the next pending task via Claude Code. Sends the task description along with requirements, design, and module context so Claude has full understanding. After execution, automatically refreshes module specs for changed directories.
 
 ```bash
 # Next pending task
@@ -144,17 +219,28 @@ sdd spec execute feat-jwt-auth
 # Specific task
 sdd spec execute feat-jwt-auth --task 1.2
 
-# Preview without output
+# Preview without executing
 sdd spec execute feat-rag-search --dry-run
 ```
 
-The generated prompt instructs to mark the task `[x]` in `tasks.md` when done — so progress tracking stays in sync.
+### `sdd spec refresh [dir]`
+
+Manually refreshes module specs (living documentation). Useful after making changes outside of `sdd spec execute`.
+
+```bash
+# Refresh all module specs
+sdd spec refresh
+
+# Refresh one directory
+sdd spec refresh src/core
+```
 
 ### `sdd arch`
 
-Generates architecture views from all specs and steering docs. Produces two outputs:
+Generates architecture views from all specs, module docs, and steering docs. Produces:
 
 - **`architecture.md`** — Mermaid diagrams that render directly on GitHub
+- **`architecture.json`** — Structured data (components, features, tech stack)
 - **`dashboard.html`** — Interactive HTML dashboard with system overview, service map, module breakdown, feature flows, and progress stats
 
 ```bash
@@ -229,14 +315,19 @@ sdd-kit/
 │   ├── cli.js                  # Commander setup
 │   ├── core/
 │   │   ├── generator.js        # Claude Code CLI invocation + prompt fallback
-│   │   └── spec-reader.js      # Read/parse specs from disk
+│   │   ├── claude-api.js       # Claude API engine (alternative to CLI)
+│   │   ├── spec-reader.js      # Read/parse specs from disk
+│   │   ├── scanner.js          # Project directory scanner
+│   │   └── progress.js         # Progress indicator for streaming
 │   └── commands/
-│       ├── init.js
-│       ├── arch.js
+│       ├── init.js             # Init + CLAUDE.md integration + steering refresh
+│       ├── arch.js             # Architecture views + dashboard
 │       └── spec/
-│           ├── create.js
-│           ├── execute.js
-│           └── status.js
+│           ├── create.js       # Create feature specs
+│           ├── document.js     # Reverse-engineer code into specs
+│           ├── execute.js      # Execute tasks from specs
+│           ├── refresh.js      # Refresh module specs
+│           └── status.js       # Show progress
 ├── templates/
 │   ├── arch-dashboard.html     # HTML dashboard template
 │   └── steering/               # Init templates

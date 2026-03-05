@@ -28,6 +28,9 @@ export async function initCmd({ auto = false, cwd = process.cwd() } = {}) {
     scaffoldTemplates(steeringDir);
   }
 
+  // Ensure CLAUDE.md references the SDD documentation
+  ensureClaudeMd(cwd);
+
   console.log('');
 }
 
@@ -143,6 +146,57 @@ Return ONLY the markdown content.`,
   }
 
   console.log(`\n${chalk.dim('  Review and edit .claude/steering/*.md as needed.')}`);
+}
+
+// ─── CLAUDE.md integration ───────────────────────────────────────────────
+
+const SDD_SECTION_MARKER = '<!-- sdd-kit:start -->';
+const SDD_SECTION_END = '<!-- sdd-kit:end -->';
+
+const SDD_BLOCK = `${SDD_SECTION_MARKER}
+## SDD (Spec-Driven Development)
+
+This project uses [sdd-kit](https://github.com/anthropics/sdd-kit) for spec-driven development.
+
+### Documentation structure
+- \`.claude/steering/\` — Project context (product, tech stack, structure)
+- \`specs/features/\` — Feature specs (requirements, design, tasks)
+- \`specs/_modules/\` — Living module documentation (auto-generated)
+- \`specs/_arch/\` — Architecture views and dashboard
+
+### Key commands
+- \`sdd spec create "feature"\` — Create a new feature spec
+- \`sdd spec execute <name>\` — Execute next task from a spec
+- \`sdd spec status\` — Show project progress
+- \`sdd arch\` — Generate architecture dashboard
+
+### When working on this project
+- Read relevant specs in \`specs/features/\` before implementing features
+- Check \`.claude/steering/\` for project context and conventions
+- After completing tasks, they are auto-marked in \`tasks.md\`
+${SDD_SECTION_END}`;
+
+function ensureClaudeMd(cwd) {
+  const claudeMdPath = path.join(cwd, 'CLAUDE.md');
+
+  if (fs.existsSync(claudeMdPath)) {
+    const content = fs.readFileSync(claudeMdPath, 'utf-8');
+    if (content.includes(SDD_SECTION_MARKER)) {
+      // Already has SDD section — update it
+      const regex = new RegExp(`${SDD_SECTION_MARKER}[\\s\\S]*?${SDD_SECTION_END}`);
+      const updated = content.replace(regex, SDD_BLOCK);
+      fs.writeFileSync(claudeMdPath, updated, 'utf-8');
+      console.log(chalk.dim('  updated  CLAUDE.md (SDD section)'));
+    } else {
+      // Append SDD section
+      fs.writeFileSync(claudeMdPath, content.trimEnd() + '\n\n' + SDD_BLOCK + '\n', 'utf-8');
+      console.log(chalk.green('  updated  CLAUDE.md (added SDD section)'));
+    }
+  } else {
+    // Create CLAUDE.md with SDD section
+    fs.writeFileSync(claudeMdPath, '# CLAUDE.md\n\n' + SDD_BLOCK + '\n', 'utf-8');
+    console.log(chalk.green('  created  CLAUDE.md'));
+  }
 }
 
 /**
