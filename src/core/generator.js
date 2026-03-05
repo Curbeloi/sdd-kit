@@ -1,32 +1,144 @@
 /**
  * generator.js
- * Calls Claude API directly OR generates prompts for Claude Code.
- * Entirely driven by spec content — no language-specific parsing.
+ * Invokes Claude Code CLI (`claude -p`) to generate specs and architecture.
+ * Falls back to saving prompt files when claude CLI is not available.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import fs from 'fs';
+import { execFile, spawn } from 'child_process';
+import { promisify } from 'util';
+import chalk from 'chalk';
 
-export const Mode = { API: 'api', PROMPT: 'prompt' };
+const execFileAsync = promisify(execFile);
 
-export function detectMode(promptOnly = false) {
-  if (promptOnly) return Mode.PROMPT;
-  return process.env.ANTHROPIC_API_KEY ? Mode.API : Mode.PROMPT;
+export const Mode = { CLAUDE: 'claude', PROMPT: 'prompt' };
+
+// ─── Claude CLI detection ────────────────────────────────────────────────────
+
+let _claudeAvailable = null;
+
+async function isClaudeAvailable() {
+  if (_claudeAvailable !== null) return _claudeAvailable;
+  try {
+    await execFileAsync('claude', ['--version'], { timeout: 5000 });
+    _claudeAvailable = true;
+  } catch {
+    _claudeAvailable = false;
+  }
+  return _claudeAvailable;
 }
 
-const client = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+export async function detectMode(promptOnly = false) {
+  if (promptOnly) return Mode.PROMPT;
+  return (await isClaudeAvailable()) ? Mode.CLAUDE : Mode.PROMPT;
+}
 
-// ─── Size-aware system prompts ────────────────────────────────────────────────
+// ─── Claude CLI caller ──────────────────────────────────────────────────────
 
-const PROMPTS = {
-  small: `You are a senior developer. Generate ONLY a tasks.md for this small change.
+async function callClaude(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', maxBudget, onProgress } = {}) {
+  const args = ['-p', prompt, '--allowedTools', allowedTools, '--output-format', 'stream-json', '--verbose'];
+  if (maxBudget) args.push('--max-budget-usd', String(maxBudget));
+
+  const debug = process.env.SDD_DEBUG === '1';
+
+  return new Promise((resolve, reject) => {
+    // Remove CLAUDECODE env var to avoid "nested session" block
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    const proc = spawn('claude', args, {
+      cwd,
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let fullOutput = '';
+    let lastText = '';
+    let buffer = '';
+
+    proc.stdout.on('data', (chunk) => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep incomplete line
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          if (debug) fs.appendFileSync('/tmp/sdd-debug.jsonl', line + '\n');
+
+          // Handle content blocks (tool_use, text)
+          const content = event.message?.content || event.content;
+          if (content && Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text') {
+                lastText += block.text;
+              }
+              if (block.type === 'tool_use' && onProgress) {
+                const tool = block.name;
+                const input = block.input || {};
+                let detail = '';
+                if (tool === 'Read') detail = input.file_path || '';
+                else if (tool === 'Write') detail = input.file_path || '';
+                else if (tool === 'Edit') detail = input.file_path || '';
+                else if (tool === 'Glob') detail = input.pattern || '';
+                else if (tool === 'Grep') detail = input.pattern || '';
+                else if (tool === 'Bash') detail = (input.command || '').slice(0, 60);
+                onProgress({ tool, detail });
+              }
+            }
+          }
+
+          if (event.type === 'result') {
+            fullOutput = lastText || (event.result || '');
+            if (onProgress && (event.cost_usd || event.cost)) {
+              onProgress({ done: true, cost: event.cost_usd || event.cost });
+            }
+          }
+        } catch { /* ignore non-JSON lines */ }
+      }
+    });
+
+    let stderr = '';
+    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error(`Claude Code failed (exit ${code}): ${stderr || 'unknown error'}`));
+      } else {
+        resolve(fullOutput);
+      }
+    });
+
+    proc.on('error', (err) => {
+      reject(new Error(`Claude Code failed: ${err.message}`));
+    });
+
+    // 10 min timeout
+    const timer = setTimeout(() => {
+      proc.kill();
+      reject(new Error('Claude Code timed out (10 min)'));
+    }, 600000);
+  });
+}
+
+// ─── Size-aware prompts ──────────────────────────────────────────────────────
+
+const SIZE_INSTRUCTIONS = {
+  small: {
+    files: ['tasks.md'],
+    prompt: (specName, description) => `Create a tasks.md file for this small change.
+
+Feature: ${description}
+
+Write the file to specs/features/${specName}/tasks.md
 
 Rules:
 - Max 5 tasks, each < 30 min
 - Be specific: include file paths, function names
 - No requirements or design doc — just tasks
 
-Output ONLY valid Markdown for tasks.md. Start with:
-# Tasks: {title}
+Format:
+# Tasks: [title]
 
 ## Context
 [one sentence]
@@ -34,11 +146,18 @@ Output ONLY valid Markdown for tasks.md. Start with:
 ## Tasks
 - [ ] **1.1** Description \`path/to/file\`
 `,
+  },
 
-  medium: `You are a senior developer and architect. Generate TWO files.
+  medium: {
+    files: ['requirements.md', 'tasks.md'],
+    prompt: (specName, description) => `Create a requirements.md and tasks.md for this feature.
 
-### FILE 1: requirements.md
-# Requirements: {title}
+Feature: ${description}
+
+Write files to specs/features/${specName}/
+
+First, create requirements.md:
+# Requirements: [title]
 
 ## Problem
 [one paragraph]
@@ -49,58 +168,50 @@ Output ONLY valid Markdown for tasks.md. Start with:
 ## Acceptance Criteria
 1. WHEN [condition] THEN the system SHALL [behavior]
 
-### FILE 2: tasks.md
+Then, create tasks.md:
 Ordered atomic tasks. Max 8 total. Each < 2 hours.
-- [ ] **1.1** Description \`path/to/file\` ← AC 1
-
-Separate files clearly with "### FILE 1:" and "### FILE 2:" headers.
+- [ ] **1.1** Description \`path/to/file\` <- AC 1
 `,
+  },
 
-  large: `You are a senior developer and architect. Generate THREE files.
+  large: {
+    files: ['requirements.md', 'design.md', 'tasks.md'],
+    prompt: (specName, description) => `Create a full SDD spec (requirements.md, design.md, tasks.md) for this feature.
 
-### FILE 1: requirements.md
-# Requirements: {title}
+Feature: ${description}
 
+Write all files to specs/features/${specName}/
+
+1. requirements.md:
+# Requirements: [title]
 ## Introduction
 ## User Stories
 ## Requirements (with Acceptance Criteria per requirement)
 
-### FILE 2: design.md
-# Design: {title}
-
-## Architecture Overview
-\`\`\`mermaid
-graph TD
-  [relevant components]
-\`\`\`
-
+2. design.md:
+# Design: [title]
+## Architecture Overview (include a mermaid diagram)
 ## Components
 ## Data Models
 ## API Contracts
 ## Key Decisions
 
-### FILE 3: tasks.md
-Grouped by phase: Setup → Core Logic → API Layer → Tests
-- [ ] **1.1** Description \`path/to/file\` ← Req 1.1
-
-Separate with "### FILE 1:", "### FILE 2:", "### FILE 3:" headers.
+3. tasks.md:
+Grouped by phase: Setup > Core Logic > API Layer > Tests
+- [ ] **1.1** Description \`path/to/file\` <- Req 1.1
 `,
+  },
 };
 
 // ─── Document (reverse engineer) ────────────────────────────────────────────
 
-const DOCUMENT_PROMPT = `You are a senior software architect.
-Analyze this project file list and generate a spec that describes what exists.
+const DOCUMENT_PROMPT = (source, specName) => `Reverse engineer the code at ${source} into a spec.
 
-Output a SINGLE spec.md file:
+Read the source files, understand what they do, and create specs/${specName}.spec.md
 
----
-@describe
-name: {name}
-source: {source}
----
+The spec should describe what EXISTS (not what should be built). Use this format:
 
-# Spec: {Title}
+# Spec: [Title]
 
 ## Purpose
 What this module/service does.
@@ -120,205 +231,159 @@ Anything important about implementation choices.
 
 // ─── Architecture ─────────────────────────────────────────────────────────
 
-const ARCH_PROMPT = `You are a software architect. Analyze these project specs and generate a comprehensive architecture view.
+function buildArchPrompt({ moduleSpecs, steering, featureSpecs }) {
+  const parts = [];
 
-Output EXACTLY this structure (use the exact headers):
+  parts.push('Analyze the following project documentation and generate architecture views.\n');
+
+  // Module specs (living documentation per directory)
+  if (moduleSpecs && Object.keys(moduleSpecs).length) {
+    parts.push('## Module Specs (per-directory analysis)\n');
+    for (const [name, content] of Object.entries(moduleSpecs)) {
+      parts.push(`### Module: ${name}\n${content.slice(0, 3000)}\n`);
+    }
+  }
+
+  // Steering docs
+  if (steering && Object.keys(steering).length) {
+    parts.push('## Steering Documents\n');
+    for (const [name, content] of Object.entries(steering)) {
+      parts.push(`### ${name}\n${content.slice(0, 2000)}\n`);
+    }
+  }
+
+  // Feature specs
+  if (featureSpecs && featureSpecs.length) {
+    parts.push('## Feature Specs\n');
+    for (const spec of featureSpecs) {
+      parts.push(`### Feature: ${spec.name}`);
+      if (spec.files.requirements) parts.push(spec.files.requirements.slice(0, 1500));
+      if (spec.files.design) parts.push(spec.files.design.slice(0, 1500));
+      const done = spec.tasks.filter(t => t.done).length;
+      parts.push(`Tasks: ${done}/${spec.tasks.length} complete\n`);
+    }
+  }
+
+  parts.push(`---
+
+Based on the documentation above, create specs/_arch/architecture.md with Mermaid diagrams.
+
+Use these exact section headers:
 
 ### SECTION: OVERVIEW
 \`\`\`mermaid
 graph TD
-  [System-level components and their relationships]
-  [Include: main services, data stores, external integrations]
-  [Use subgraphs for logical groupings]
+  [System-level components and relationships]
 \`\`\`
 
 ### SECTION: SERVICES
 \`\`\`mermaid
 graph LR
   [Service-to-service relationships and data flow]
-  [Each feature as a node, dependencies as edges]
 \`\`\`
 
 ### SECTION: FLOWS
-For each major feature, a sequence diagram:
-
+For each major feature or data flow:
 #### Flow: {feature-name}
 \`\`\`mermaid
 sequenceDiagram
-  [participants and interactions for this feature]
+  [participants and interactions]
 \`\`\`
 
 ### SECTION: MODULES
 \`\`\`mermaid
 graph TD
   [Module/component breakdown]
-  [subgraph per domain/layer]
 \`\`\`
 
 ### SECTION: SUMMARY
-A JSON object (no markdown fences) with this exact shape:
+A JSON object (no markdown fences):
 {
   "system_name": "string",
-  "description": "string (1-2 sentences)",
+  "description": "string",
   "components": [{"name": "string", "type": "service|module|store|external", "description": "string"}],
   "features": [{"name": "string", "status": "complete|in-progress|planned", "tasks_done": 0, "tasks_total": 0}],
   "tech_stack": ["string"],
   "key_decisions": ["string"]
 }
-`;
+`);
 
-// ─── API caller ───────────────────────────────────────────────────────────
-
-async function callAPI(systemPrompt, userContent, maxTokens = 4096) {
-  const response = await client().messages.create({
-    model: 'claude-opus-4-5',
-    max_tokens: maxTokens,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userContent }],
-  });
-  return response.content[0].text;
+  return parts.join('\n');
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
-export async function generateCreateSpec({ description, specName, size, projectContext, promptOnly }) {
-  const mode = detectMode(promptOnly);
-  const sizePrompt = PROMPTS[size] || PROMPTS.large;
-  const contextBlock = projectContext ? `\n\n## Project Context\n${projectContext}` : '';
-  const userContent = `Feature: ${description}\nSpec name: ${specName}${contextBlock}`;
+export async function generateCreateSpec({ description, specName, size, projectContext, promptOnly, cwd, onProgress }) {
+  const mode = await detectMode(promptOnly);
+  const sizeConfig = SIZE_INSTRUCTIONS[size] || SIZE_INSTRUCTIONS.large;
+  const basePrompt = sizeConfig.prompt(specName, description);
+  const contextBlock = projectContext
+    ? `\nProject context (from .claude/steering/):\n${projectContext}\n\nUse this context to make the spec specific to this project.`
+    : '';
+  const fullPrompt = basePrompt + contextBlock;
 
-  if (mode === Mode.API) {
-    const raw = await callAPI(sizePrompt, userContent);
-    return { mode, files: parseMultiFileResponse(raw, size) };
+  if (mode === Mode.CLAUDE) {
+    await callClaude(fullPrompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 0.5, onProgress });
+    return { mode, specName };
   }
 
-  const fileList = {
-    small:  '1. `tasks.md`',
-    medium: '1. `requirements.md`\n2. `tasks.md`',
-    large:  '1. `requirements.md`\n2. `design.md`\n3. `tasks.md`',
-  }[size];
-
-  const approvalNote = size !== 'small'
-    ? '\nWait for user approval of requirements.md before writing tasks.' : '';
-
-  const prompt = buildClaudeCodePrompt({
-    task: `Create a ${size} SDD spec for: ${description}`,
-    context: projectContext,
-    instructions: `Create these files in \`specs/features/${specName}/\`:\n${fileList}${approvalNote}`,
-  });
-
-  return { mode, files: { prompt } };
+  return { mode, prompt: fullPrompt, specName };
 }
 
-export async function generateDocumentSpec({ source, specName, fileList, promptOnly }) {
-  const mode = detectMode(promptOnly);
-  const userContent = `Source: ${source}\nSpec name: ${specName}\n\nFile list:\n${fileList}`;
+export async function generateDocumentSpec({ source, specName, promptOnly, cwd, onProgress }) {
+  const mode = await detectMode(promptOnly);
+  const prompt = DOCUMENT_PROMPT(source, specName);
 
-  if (mode === Mode.API) {
-    const raw = await callAPI(DOCUMENT_PROMPT, userContent, 2048);
-    return { mode, files: { spec: raw } };
+  if (mode === Mode.CLAUDE) {
+    await callClaude(prompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 0.5, onProgress });
+    return { mode, specName };
   }
 
-  const prompt = buildClaudeCodePrompt({
-    task: `Reverse engineer ${source} into a spec`,
-    context: '',
-    instructions: `Read the source files and create \`specs/${specName}.spec.md\` with @describe tag.`,
-  });
-
-  return { mode, files: { prompt } };
+  return { mode, prompt, specName };
 }
 
-export async function generateArchitecture({ specs, steering, promptOnly }) {
-  const mode = detectMode(promptOnly);
+export async function generateArchitecture({ promptOnly, cwd, moduleSpecs, steering, featureSpecs, onProgress }) {
+  const mode = await detectMode(promptOnly);
+  const prompt = buildArchPrompt({ moduleSpecs, steering, featureSpecs });
 
-  // Build context from all specs
-  const specsContext = specs.map(s => {
-    const parts = [`## Feature: ${s.name}`];
-    if (s.files.requirements) parts.push(`### Requirements\n${s.files.requirements.slice(0, 800)}`);
-    if (s.files.design) parts.push(`### Design\n${s.files.design.slice(0, 800)}`);
-    const done = s.tasks.filter(t => t.done).length;
-    parts.push(`Tasks: ${done}/${s.tasks.length} done`);
-    return parts.join('\n');
-  }).join('\n\n---\n\n');
-
-  const steeringContext = Object.entries(steering)
-    .map(([k, v]) => `## ${k}.md\n${v.slice(0, 600)}`)
-    .join('\n\n');
-
-  const userContent = `${steeringContext}\n\n# Feature Specs\n${specsContext}`;
-
-  if (mode === Mode.API) {
-    const raw = await callAPI(ARCH_PROMPT, userContent, 6000);
+  if (mode === Mode.CLAUDE) {
+    const raw = await callClaude(prompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 1.0, onProgress });
     return { mode, raw };
   }
 
-  const prompt = buildClaudeCodePrompt({
-    task: 'Generate architecture documentation from specs',
-    context: '',
-    instructions: `Read all files in specs/ and .claude/steering/ then create:
-1. \`specs/_arch/architecture.md\` — Mermaid diagrams (overview, services, flows, modules)
-2. \`specs/_arch/dashboard.html\` — interactive HTML with rendered diagrams`,
-  });
-
-  return { mode, raw: prompt };
+  return { mode, prompt };
 }
 
-export function generateExecutePrompt({ spec, task, requirements, design }) {
+export function generateExecutePrompt({ spec, task, requirements, design, moduleContext }) {
   const contextParts = [];
   if (requirements) contextParts.push(`## Requirements\n${requirements.slice(0, 1500)}`);
   if (design) contextParts.push(`## Design\n${design.slice(0, 1500)}`);
+  if (moduleContext) contextParts.push(`## Module Specs (living documentation)\n${moduleContext.slice(0, 3000)}`);
+  const context = contextParts.length ? `\n\n${contextParts.join('\n\n')}` : '';
 
-  return buildClaudeCodePrompt({
-    task: task
-      ? `Execute task ${task.id}: ${task.desc}`
-      : `Execute next pending task in spec: ${spec.name}`,
-    context: contextParts.join('\n\n'),
-    instructions: task
-      ? `Implement task ${task.id}: ${task.desc}${task.file ? ` in \`${task.file}\`` : ''}.
-When done, mark it complete in tasks.md: change \`[ ]\` to \`[x]\` for task ${task.id}.`
-      : `Find the first unchecked task in specs/features/${spec.name}/tasks.md and implement it.
-When done, mark it \`[x]\` in tasks.md.`,
-  });
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────
-
-function buildClaudeCodePrompt({ task, context, instructions }) {
-  const parts = [`## SDD Task\n${task}`];
-  if (context) parts.push(`## Context\n${context}`);
-  parts.push(`## Instructions\n${instructions}`);
-  parts.push('---\n*Generated by sdd-kit — https://github.com/icurbe/sdd-kit*');
-  return parts.join('\n\n');
-}
-
-function parseMultiFileResponse(raw, size) {
-  const fileKeys = { small: ['tasks'], medium: ['requirements', 'tasks'], large: ['requirements', 'design', 'tasks'] }[size];
-  const result = {};
-  let current = null;
-  const buffer = [];
-
-  for (const line of raw.split('\n')) {
-    const lower = line.toLowerCase();
-    let matched = null;
-    for (const key of fileKeys) {
-      if (lower.includes(`${key}.md`) || lower.includes(`## ${key}`) || lower.includes(`file ${fileKeys.indexOf(key) + 1}`)) {
-        matched = key; break;
-      }
-    }
-    if (matched) {
-      if (current && buffer.length) result[current] = buffer.join('\n').trim();
-      current = matched;
-      buffer.length = 0;
-    } else if (current) {
-      buffer.push(line);
-    }
+  if (task) {
+    return `Execute task ${task.id}: ${task.desc}${task.file ? ` in \`${task.file}\`` : ''}.
+${context}
+When done, mark it complete in tasks.md: change \`[ ]\` to \`[x]\` for task ${task.id}.`;
   }
-  if (current && buffer.length) result[current] = buffer.join('\n').trim();
 
-  // Fallback
-  if (!Object.keys(result).length) result[fileKeys[0]] = raw.trim();
-  return result;
+  return `Find the first unchecked task in specs/features/${spec.name}/tasks.md and implement it.
+${context}
+When done, mark it \`[x]\` in tasks.md.`;
 }
+
+export async function executeTask({ prompt, promptOnly, cwd, onProgress }) {
+  const mode = await detectMode(promptOnly);
+
+  if (mode === Mode.CLAUDE) {
+    await callClaude(prompt, { cwd, allowedTools: 'Read,Write,Edit,Glob,Grep,Bash', onProgress });
+    return { mode };
+  }
+
+  return { mode, prompt };
+}
+
+// ─── Arch parsing (used when Claude writes architecture.md directly) ─────
 
 export function parseArchSections(raw) {
   const sections = { overview: '', services: '', flows: {}, modules: '', summary: null };
@@ -328,12 +393,17 @@ export function parseArchSections(raw) {
 
   const flush = () => {
     if (!current) return;
-    const content = buffer.join('\n').trim();
+    // Strip mermaid fences: ```mermaid ... ```
+    const content = buffer.join('\n').trim()
+      .replace(/^```mermaid\s*/gm, '')
+      .replace(/^```\s*$/gm, '')
+      .replace(/^graph\s+(TD|TB|BT|LR|RL)/gm, 'flowchart $1')
+      .trim();
     if (current === 'FLOWS' && flowName) sections.flows[flowName] = content;
     else if (current === 'SUMMARY') {
       try { sections.summary = JSON.parse(content.replace(/```json|```/g, '').trim()); } catch {}
     }
-    else sections[current.toLowerCase()] = content;
+    else if (current !== 'FLOWS') sections[current.toLowerCase()] = content;
     buffer.length = 0;
   };
 
@@ -348,9 +418,10 @@ export function parseArchSections(raw) {
     } else if (flowMatch && current === 'FLOWS') {
       flush();
       flowName = flowMatch[1].trim();
-    } else {
+    } else if (current) {
       buffer.push(line);
     }
+    // Lines before first section are ignored (e.g. H1 title)
   }
   flush();
 

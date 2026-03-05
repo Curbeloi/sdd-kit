@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 const SPECS_DIR = 'specs/features';
+const MODULES_DIR = 'specs/_modules';
 const STEERING_DIR = '.claude/steering';
 
 export function readAllSpecs(cwd) {
@@ -37,6 +38,25 @@ export function readSpec(cwd, specName) {
   const tasks = parseTasks(tasksContent);
 
   return { name: specName, dir, files, tasks, tasksContent };
+}
+
+/**
+ * Read all module specs from specs/_modules/*.spec.md
+ * Returns { moduleName: content } map.
+ */
+export function readModuleSpecs(cwd) {
+  const dir = path.join(cwd, MODULES_DIR);
+  if (!fs.existsSync(dir)) return {};
+
+  const result = {};
+  for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.spec.md'))) {
+    const content = fs.readFileSync(path.join(dir, f), 'utf-8');
+    if (content.trim()) {
+      const name = f.replace('.spec.md', '');
+      result[name] = content;
+    }
+  }
+  return result;
 }
 
 export function readSteering(cwd) {

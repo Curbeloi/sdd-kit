@@ -1,10 +1,16 @@
 /**
- * sdd spec execute — generate Claude Code prompt for a spec's tasks
+ * sdd spec execute — execute a spec task via Claude Code
  */
 
 import chalk from 'chalk';
-import { readSpec, findNextPendingTask } from '../../core/spec-reader.js';
-import { generateExecutePrompt } from '../../core/generator.js';
+import ora from 'ora';
+import fs from 'fs';
+import path from 'path';
+import { readSpec, findNextPendingTask, readModuleSpecs } from '../../core/spec-reader.js';
+import { generateExecutePrompt, executeTask, detectMode, Mode } from '../../core/generator.js';
+import { createProgress } from '../../core/progress.js';
+import { refreshModule } from './refresh.js';
+import { refreshSteering } from '../init.js';
 
 export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = process.cwd() }) {
   const spec = readSpec(cwd, specName);
@@ -32,6 +38,19 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = p
     }
   }
 
+  const modules = readModuleSpecs(cwd);
+  const moduleContext = Object.entries(modules).map(([name, content]) =>
+    `### Module: ${name}\n${content}`
+  ).join('\n\n');
+
+  const prompt = generateExecutePrompt({
+    spec,
+    task,
+    requirements: spec.files.requirements,
+    design: spec.files.design,
+    moduleContext,
+  });
+
   if (dryRun) {
     console.log(`\n${chalk.bold('Would execute:')} ${chalk.cyan(task.id)} — ${task.desc}`);
     if (task.file) console.log(chalk.dim(`  File: ${task.file}`));
@@ -39,16 +58,49 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = p
     return;
   }
 
-  const prompt = generateExecutePrompt({
-    spec,
-    task,
-    requirements: spec.files.requirements,
-    design: spec.files.design,
-  });
+  const mode = await detectMode(promptOnly);
 
   console.log(`\n${chalk.bold('sdd spec execute')} — ${chalk.cyan(specName)} task ${task.id}\n`);
-  console.log(chalk.dim('─'.repeat(60)));
-  console.log(prompt);
-  console.log(chalk.dim('─'.repeat(60)));
-  console.log(`\n${chalk.dim('Copy the above prompt into Claude Code to execute this task.')}\n`);
+
+  if (mode === Mode.CLAUDE) {
+    const spinner = ora(`Executing task ${task.id} via Claude Code...`).start();
+    const onProgress = createProgress(spinner);
+    try {
+      await executeTask({ prompt, cwd, onProgress });
+      spinner.succeed(`Task ${task.id} executed by Claude Code`);
+      console.log(chalk.dim(`  Check specs/features/${specName}/tasks.md for updated status.`));
+
+      // Post-task: refresh module spec for affected directory
+      if (task.file) {
+        const dir = path.dirname(task.file).split(path.sep)[0];
+        if (dir && dir !== '.') {
+          const refreshSpinner = ora(chalk.dim(`Updating module spec: ${dir}`)).start();
+          try {
+            await refreshModule({ dir: task.file.split(path.sep).slice(0, -1).join(path.sep) || '.', cwd });
+            refreshSpinner.succeed(chalk.dim(`Module spec updated: ${dir}`));
+          } catch {
+            refreshSpinner.info(chalk.dim(`Module spec not updated (run sdd spec refresh)`));
+          }
+        }
+      }
+      // Auto-refresh steering docs
+      await refreshSteering({ cwd, silent: false });
+    } catch (err) {
+      onProgress.stop();
+      spinner.fail(`Task ${task.id} failed`);
+      console.error(chalk.red(`\n  ${err.message}`));
+    }
+  } else {
+    // Fallback: save prompt to file
+    const promptDir = path.join(cwd, 'specs', 'features', specName);
+    fs.mkdirSync(promptDir, { recursive: true });
+    const promptPath = path.join(promptDir, `execute_${task.id}_prompt.md`);
+    fs.writeFileSync(promptPath, prompt, 'utf-8');
+    console.log(chalk.dim('─'.repeat(60)));
+    console.log(prompt);
+    console.log(chalk.dim('─'.repeat(60)));
+    console.log(`\n  ${chalk.dim('Prompt saved:')} ${path.relative(cwd, promptPath)}`);
+    console.log(chalk.dim(`  Paste into Claude Code to execute this task.`));
+  }
+  console.log('');
 }

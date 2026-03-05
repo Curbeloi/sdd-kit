@@ -6,10 +6,12 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { createCmd }  from './commands/spec/create.js';
-import { statusCmd }  from './commands/spec/status.js';
-import { executeCmd } from './commands/spec/execute.js';
-import { archCmd }    from './commands/arch.js';
+import { createCmd }   from './commands/spec/create.js';
+import { documentCmd } from './commands/spec/document.js';
+import { statusCmd }   from './commands/spec/status.js';
+import { executeCmd }  from './commands/spec/execute.js';
+import { refreshCmd }  from './commands/spec/refresh.js';
+import { archCmd }     from './commands/arch.js';
 
 const program = new Command();
 
@@ -21,6 +23,7 @@ program
 ${chalk.bold('Quick start:')}
   ${chalk.cyan('sdd spec create')} "JWT authentication"          ${chalk.dim('→ new feature spec')}
   ${chalk.cyan('sdd spec create')} "Fix 422 on login" --size small ${chalk.dim('→ just tasks')}
+  ${chalk.cyan('sdd spec document')} src/auth/                    ${chalk.dim('→ reverse engineer code')}
   ${chalk.cyan('sdd spec status')}                               ${chalk.dim('→ project overview')}
   ${chalk.cyan('sdd arch')}                                      ${chalk.dim('→ architecture dashboard')}
 
@@ -57,6 +60,21 @@ ${chalk.bold('Examples:')}
   });
 
 spec
+  .command('document <path>')
+  .description('Reverse engineer existing code into a spec')
+  .option('-n, --name <name>',  'Spec name (default: derived from path)')
+  .option('-p, --prompt-only',  'Save prompt instead of invoking Claude Code')
+  .addHelpText('after', `
+${chalk.bold('Examples:')}
+  sdd spec document src/auth/
+  sdd spec document app/services/rag_service.py --name rag-service
+  sdd spec document src/components/Dashboard.tsx --prompt-only
+  `)
+  .action((source, opts) => {
+    documentCmd({ source, name: opts.name, promptOnly: opts.promptOnly || false });
+  });
+
+spec
   .command('execute <spec-name>')
   .description('Execute tasks from a spec (generates Claude Code prompt)')
   .option('-t, --task <id>',   'Specific task ID (default: next pending)')
@@ -83,6 +101,19 @@ ${chalk.bold('Examples:')}
   `)
   .action((specName, opts) => {
     statusCmd({ specName, verbose: opts.verbose });
+  });
+
+spec
+  .command('refresh [dir]')
+  .description('Update module specs (living documentation)')
+  .option('-p, --prompt-only', 'Skip Claude Code (no-op for refresh)')
+  .addHelpText('after', `
+${chalk.bold('Examples:')}
+  sdd spec refresh                ${chalk.dim('→ refresh all module specs')}
+  sdd spec refresh src/core       ${chalk.dim('→ refresh one directory')}
+  `)
+  .action((dir, opts) => {
+    refreshCmd({ dir, promptOnly: opts.promptOnly || false });
   });
 
 // ─── sdd arch ─────────────────────────────────────────────────────────────
@@ -114,8 +145,14 @@ ${chalk.bold('Examples:')}
 program
   .command('init')
   .description('Initialize sdd-kit in current project (creates steering docs)')
-  .action(() => {
-    import('./commands/init.js').then(m => m.initCmd());
+  .option('-a, --auto', 'Auto-generate steering docs from module specs (requires sdd spec document first)')
+  .addHelpText('after', `
+${chalk.bold('Examples:')}
+  sdd init                ${chalk.dim('→ create template steering docs (manual edit)')}
+  sdd init --auto         ${chalk.dim('→ auto-generate from specs/_modules/')}
+  `)
+  .action((opts) => {
+    import('./commands/init.js').then(m => m.initCmd({ auto: opts.auto || false }));
   });
 
 program.parse();
