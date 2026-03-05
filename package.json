@@ -1,6 +1,6 @@
 {
   "name": "sdd-kit",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Spec-Driven Development CLI — language-agnostic, works with any project",
   "keywords": [
     "sdd",
@@ -16,11 +16,11 @@
   "homepage": "https://github.com/icurbe/sdd-kit",
   "repository": {
     "type": "git",
-    "url": "https://github.com/icurbe/sdd-kit.git"
+    "url": "git+https://github.com/icurbe/sdd-kit.git"
   },
   "type": "module",
   "bin": {
-    "sdd": "./bin/sdd.js"
+    "sdd": "bin/sdd.js"
   },
   "files": [
     "bin/",
