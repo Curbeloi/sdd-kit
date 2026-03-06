@@ -25,7 +25,8 @@
   "files": [
     "bin/",
     "src/",
-    "templates/"
+    "templates/",
+    "README.md"
   ],
   "scripts": {
     "test": "node --test src/**/*.test.js"
