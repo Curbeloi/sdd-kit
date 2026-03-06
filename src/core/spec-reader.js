@@ -7,7 +7,7 @@ import fs from 'fs';
 import path from 'path';
 
 const SPECS_DIR = 'specs/features';
-const MODULES_DIR = 'specs/_modules';
+const MODULES_DIR = 'specs/_map';
 const STEERING_DIR = '.claude/steering';
 
 export function readAllSpecs(cwd) {
@@ -41,7 +41,7 @@ export function readSpec(cwd, specName) {
 }
 
 /**
- * Read all module specs from specs/_modules/*.spec.md
+ * Read all module specs from specs/_map/*.spec.md
  * Returns { moduleName: content } map.
  */
 export function readModuleSpecs(cwd) {

@@ -161,7 +161,7 @@ This project uses [sdd-kit](https://github.com/anthropics/sdd-kit) for spec-driv
 ### Documentation structure
 - \`.claude/steering/\` — Project context (product, tech stack, structure)
 - \`specs/features/\` — Feature specs (requirements, design, tasks)
-- \`specs/_modules/\` — Living module documentation (auto-generated)
+- \`specs/_map/\` — Living project map (auto-generated)
 - \`specs/_arch/\` — Architecture views and dashboard
 
 ### Key commands

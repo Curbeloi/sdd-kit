@@ -4,7 +4,7 @@
  * Uses unified claude-api (SDK or CLI auto-detected):
  *   1. Scan locally → show plan
  *   2. Read files locally
- *   3. Parallel analysis — one request per directory → specs/_modules/*.spec.md
+ *   3. Parallel analysis — one request per directory → specs/_map/*.spec.md
  *   4. Final synthesis → unified spec
  */
 
@@ -95,13 +95,13 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
         console.error(chalk.dim(`      ${err.message}`));
       } else {
         // Save module spec
-        const modulesDir = path.join(cwd, 'specs', '_modules');
-        fs.mkdirSync(modulesDir, { recursive: true });
-        const specPath = path.join(modulesDir, `${slugifyDir(label)}.spec.md`);
+        const mapDir = path.join(cwd, 'specs', '_map');
+        fs.mkdirSync(mapDir, { recursive: true });
+        const specPath = path.join(mapDir, `${slugifyDir(label)}.spec.md`);
         fs.writeFileSync(specPath, result, 'utf-8');
 
         const elapsed = Math.floor((Date.now() - startTimes.get(i)) / 1000);
-        spinner.succeed(`${prefix} ${chalk.blue(label)} ${chalk.green('done')} ${chalk.dim(`${elapsed}s → _modules/${slugifyDir(label)}.spec.md`)}`);
+        spinner.succeed(`${prefix} ${chalk.blue(label)} ${chalk.green('done')} ${chalk.dim(`${elapsed}s → _map/${slugifyDir(label)}.spec.md`)}`);
       }
     },
   });

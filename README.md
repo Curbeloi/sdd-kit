@@ -1,16 +1,24 @@
 # sdd-kit
 
-**Spec-Driven Development CLI** — language-agnostic, works with any project.
+**Spec-Driven Development for [Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — language-agnostic, works with any project.
 
-The biggest engineering orgs (Amazon's six-pagers, Google's design docs, Stripe's RFCs) have always written specs before code. `sdd-kit` brings that discipline to any team — with or without AI.
+The biggest engineering orgs (Amazon's six-pagers, Google's design docs, Stripe's RFCs) have always written specs before code. `sdd-kit` brings that discipline to Claude Code — structured specs in, quality code out.
 
 ```
-You describe what to build  -->  sdd-kit structures the spec  -->  Anyone (or any agent) executes it
+You describe what to build  →  sdd-kit structures the spec  →  Claude Code executes it
 ```
 
-**Not a code generator. A clarity tool.** The spec is the source of truth. The execution — human or AI — is secondary.
+**Not a code generator. A clarity tool.** The spec is the source of truth. Claude Code is the execution engine.
 
 ---
+
+## Requirements
+
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — the execution engine. Install: `npm install -g @anthropic-ai/claude-code`
+- **Node.js >= 18**
+- Optional: `ANTHROPIC_API_KEY` env var for faster SDK mode (bypasses Claude Code CLI for spec generation)
+
+Without Claude Code, sdd-kit works in **prompt-only mode** (`--prompt-only`) — it generates structured prompts you can paste into any AI tool.
 
 ## Install
 
@@ -24,7 +32,7 @@ Or run without installing:
 npx sdd-kit --help
 ```
 
-Requires Node.js >= 18 and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed (`npm install -g @anthropic-ai/claude-code`). Works in prompt-only mode without Claude Code.
+> **Language:** sdd-kit detects your system language. Set `SDD_LANG=es` for Spanish or `SDD_LANG=en` for English.
 
 ## Quick start
 
@@ -42,7 +50,7 @@ sdd spec document src/services/api.ts
 sdd arch
 
 # 3. Initialize SDD (creates steering docs + updates CLAUDE.md)
-#    Use --auto to generate steering from module specs
+#    Use --auto to generate steering from map specs
 sdd init --auto
 
 # 4. Now create specs for new features
@@ -79,19 +87,19 @@ sdd-kit keeps documentation in sync with code through **automatic refresh** at e
 
 | Event | What gets updated |
 |-------|-------------------|
-| `sdd spec execute` completes a task | Module spec for the changed directory is refreshed, steering docs are updated |
+| `sdd spec execute` completes a task | Project map specs for ALL changed directories are refreshed (via git diff), steering docs are updated |
 | `sdd spec create` generates a new spec | Steering docs are updated with the new feature |
-| `sdd spec refresh` (manual) | All module specs are regenerated from current code |
+| `sdd spec refresh` (manual) | All project map specs are regenerated from current code |
 | `sdd arch` | Architecture views + dashboard rebuilt from all specs |
 
 **Living documentation flow:**
 
 ```
-Code changes --> module specs update --> steering docs update --> arch views update
+Code changes --> project map updates --> steering docs update --> arch views update
      (auto)           (auto)                 (auto)                (on demand)
 ```
 
-Module specs (`specs/_modules/`) are auto-generated per directory. Steering docs (`.claude/steering/`) are auto-refreshed after spec operations. Architecture views (`specs/_arch/`) are rebuilt on `sdd arch`. The only manual step is running `sdd arch` when you want an updated dashboard.
+Project map (`specs/_map/`) is auto-generated per directory. Steering docs (`.claude/steering/`) are auto-refreshed after spec operations. Architecture views (`specs/_arch/`) are rebuilt on `sdd arch`. The only manual step is running `sdd arch` when you want an updated dashboard.
 
 ## How it works
 
@@ -106,9 +114,9 @@ your-project/
 │       ├── tech.md            # Stack, infra, constraints
 │       └── structure.md       # Code organization, conventions
 ├── specs/
-│   ├── _modules/              # Living documentation (auto-generated)
-│   │   ├── src--auth.md       # One spec per directory
-│   │   ├── src--services.md
+│   ├── _map/                  # Living project map (auto-generated)
+│   │   ├── src--auth.spec.md  # One spec per directory
+│   │   ├── src--services.spec.md
 │   │   └── ...
 │   ├── features/              # One folder per feature
 │   │   └── feat-jwt-auth/
@@ -133,7 +141,7 @@ Scaffolds the SDD structure in your project. Creates `.claude/steering/` with te
 # Template steering docs (manual edit)
 sdd init
 
-# Auto-generate steering from existing module specs
+# Auto-generate steering from existing map specs
 sdd init --auto
 ```
 
@@ -141,7 +149,7 @@ Safe to run multiple times — skips existing steering files, updates CLAUDE.md 
 
 ### `sdd spec document <path>`
 
-Reverse-engineers existing code into a module spec. This is the starting point for existing projects — document what you have before planning what to build.
+Reverse-engineers existing code into a map spec. This is the starting point for existing projects — document what you have before planning what to build.
 
 ```bash
 # Document a directory
@@ -154,7 +162,7 @@ sdd spec document app/services/rag_service.py --name rag-service
 sdd spec document src/components/ --prompt-only
 ```
 
-Output goes to `specs/_modules/`. These specs are used as context for `sdd arch`, `sdd init --auto`, and `sdd spec create`.
+Output goes to `specs/_map/`. These specs are used as context for `sdd arch`, `sdd init --auto`, and `sdd spec create`.
 
 ### `sdd spec create <description>`
 
@@ -210,7 +218,7 @@ Indicators: **R** = requirements.md, **D** = design.md, **T** = tasks.md (green 
 
 ### `sdd spec execute <spec-name>`
 
-Executes the next pending task via Claude Code. Sends the task description along with requirements, design, and module context so Claude has full understanding. After execution, automatically refreshes module specs for changed directories.
+Executes the next pending task via Claude Code. Sends the task description along with requirements, design, and module context so Claude has full understanding. After execution, automatically refreshes map specs for changed directories.
 
 ```bash
 # Next pending task
@@ -225,10 +233,10 @@ sdd spec execute feat-rag-search --dry-run
 
 ### `sdd spec refresh [dir]`
 
-Manually refreshes module specs (living documentation). Useful after making changes outside of `sdd spec execute`.
+Manually refreshes map specs (living documentation). Useful after making changes outside of `sdd spec execute`.
 
 ```bash
-# Refresh all module specs
+# Refresh all map specs
 sdd spec refresh
 
 # Refresh one directory
@@ -254,24 +262,26 @@ sdd arch --prompt-only
 open specs/_arch/dashboard.html
 ```
 
-## Powered by Claude Code
+## Built for Claude Code
 
-sdd-kit uses [Claude Code](https://docs.anthropic.com/en/docs/claude-code) as its execution engine. When Claude Code is installed, every command runs through it — no API key needed, no separate configuration.
+sdd-kit is designed specifically for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Every command leverages Claude Code's full project understanding — it reads your files, follows your CLAUDE.md conventions, and writes code that fits your codebase.
 
 | Mode | When | What happens |
 |------|------|-------------|
-| **Claude Code** | `claude` CLI is installed | Invokes Claude Code directly — it reads your project, generates files, executes tasks |
-| **Prompt-only** | `claude` not found, or `--prompt-only` | Saves a structured prompt file you paste into any AI tool |
+| **Claude Code** | `claude` CLI installed | Full execution — reads project, generates specs, writes code, updates docs |
+| **SDK** | `ANTHROPIC_API_KEY` set | Fast mode — uses Anthropic API directly for spec generation (no code execution) |
+| **Prompt-only** | `--prompt-only` flag | Saves structured prompts you paste into any AI tool |
 
 ```bash
-# If Claude Code is installed, this just works
+# Claude Code mode (default) — full power
 sdd spec create "Add caching layer"
+sdd spec execute feat-caching
 
-# Force prompt-only mode
+# Prompt-only — works without Claude Code
 sdd spec create "Add caching layer" --prompt-only
 ```
 
-Why Claude Code instead of a direct API call? Because Claude Code has full project context — it reads your files, understands your codebase, and follows your CLAUDE.md conventions. A raw API call sees nothing but the prompt.
+Why Claude Code? Because a raw API call sees nothing but the prompt. Claude Code sees your entire project, your conventions, your existing code. The specs sdd-kit generates become Claude Code's instructions — structured context that produces better code.
 
 ## Task format
 
@@ -318,6 +328,7 @@ sdd-kit/
 │   │   ├── claude-api.js       # Claude API engine (alternative to CLI)
 │   │   ├── spec-reader.js      # Read/parse specs from disk
 │   │   ├── scanner.js          # Project directory scanner
+│   │   ├── git-changes.js      # Git diff detection for smart refresh
 │   │   └── progress.js         # Progress indicator for streaming
 │   └── commands/
 │       ├── init.js             # Init + CLAUDE.md integration + steering refresh
@@ -326,7 +337,7 @@ sdd-kit/
 │           ├── create.js       # Create feature specs
 │           ├── document.js     # Reverse-engineer code into specs
 │           ├── execute.js      # Execute tasks from specs
-│           ├── refresh.js      # Refresh module specs
+│           ├── refresh.js      # Refresh map specs
 │           └── status.js       # Show progress
 ├── templates/
 │   ├── arch-dashboard.html     # HTML dashboard template

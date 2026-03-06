@@ -28,7 +28,7 @@ export async function archCmd({ level, flow, output, promptOnly, cwd = process.c
 
   if (!specCount && !steeringCount && !moduleCount) {
     console.log(chalk.yellow('\n  No specs found. Run `sdd spec document` or `sdd spec create` first.'));
-    console.log(chalk.dim('  Expected: specs/_modules/, specs/features/*/, or .claude/steering/\n'));
+    console.log(chalk.dim('  Expected: specs/_map/, specs/features/*/, or .claude/steering/\n'));
     return;
   }
 

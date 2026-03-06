@@ -1,7 +1,7 @@
 /**
  * sdd-kit CLI
- * Language-agnostic Spec-Driven Development tool.
- * Works with any project: React, FastAPI, Laravel, Rails, etc.
+ * Spec-Driven Development tool for Claude Code.
+ * Language-agnostic — works with any project.
  */
 
 import { Command } from 'commander';
@@ -13,38 +13,141 @@ import { executeCmd }  from './commands/spec/execute.js';
 import { refreshCmd }  from './commands/spec/refresh.js';
 import { archCmd }     from './commands/arch.js';
 
+// ─── Language detection ──────────────────────────────────────────────────────
+
+const LANG = (process.env.SDD_LANG || process.env.LANG || 'en').toLowerCase();
+const isES = LANG.startsWith('es');
+
+const t = isES ? {
+  desc: 'Kit de Desarrollo Guiado por Specs — para Claude Code',
+  quickStart: 'Inicio rápido:',
+  allCommands: 'Todos los comandos:',
+  specSizes: 'Tamaños de spec:',
+  specDesc: 'Comandos de gestión de specs',
+  createDesc: 'Crear spec desde una descripción de feature',
+  createOptName: 'Nombre del spec (default: auto-generado)',
+  createOptSize: 'Tamaño: small | medium | large',
+  createOptPrompt: 'Generar prompt sin ejecutar Claude Code',
+  documentDesc: 'Documentar código existente en un spec',
+  documentOptName: 'Nombre del spec (default: derivado del path)',
+  documentOptPrompt: 'Guardar prompt en vez de invocar Claude Code',
+  executeDesc: 'Ejecutar la siguiente tarea de un spec via Claude Code',
+  executeOptTask: 'ID de tarea específica (default: siguiente pendiente)',
+  executeOptDry: 'Mostrar qué se haría sin ejecutar',
+  executeOptPrompt: 'Generar prompt sin ejecutar',
+  statusDesc: 'Ver progreso del proyecto y specs',
+  statusOptVerbose: 'Mostrar detalle de tareas individuales',
+  refreshDesc: 'Actualizar specs del mapa del proyecto (documentación viva)',
+  refreshOptPrompt: 'No ejecutar (requiere engine)',
+  archDesc: 'Generar vistas de arquitectura desde todos los specs',
+  archOptLevel: 'Nivel: system | services | modules',
+  archOptFlow: 'Diagrama de flujo para un feature específico',
+  archOptOutput: 'Directorio de salida (default: specs/_arch/)',
+  archOptPrompt: 'Generar prompt sin ejecutar Claude Code',
+  initDesc: 'Inicializar sdd-kit en el proyecto (crea steering docs + CLAUDE.md)',
+  initOptAuto: 'Auto-generar steering desde specs del mapa (requiere sdd spec document primero)',
+  examples: 'Ejemplos:',
+  output: 'Salida:',
+  sizeSmall: 'solo tasks.md          bug fixes, ajustes',
+  sizeMedium: 'requirements + tasks   features claros (1-3 días)',
+  sizeLarge: 'spec completo (3 arch)  features complejos / nueva arquitectura',
+  newSpec: 'nuevo spec de feature',
+  justTasks: 'solo tareas',
+  reverseEng: 'documentar código existente',
+  projectOverview: 'resumen del proyecto',
+  archDashboard: 'dashboard de arquitectura',
+  refreshAll: 'refrescar todo el mapa',
+  refreshOne: 'refrescar un directorio',
+  initManual: 'crear steering docs (edición manual)',
+  initAuto: 'auto-generar desde specs/_map/',
+  executeSpec: 'ejecutar siguiente tarea',
+  executeTask: 'ejecutar tarea específica',
+  executeDry: 'vista previa sin ejecutar',
+  mermaid: 'Diagramas Mermaid — se ven en GitHub',
+  dashboard: 'Dashboard interactivo — abrir en navegador',
+} : {
+  desc: 'Spec-Driven Development Kit — for Claude Code',
+  quickStart: 'Quick start:',
+  allCommands: 'All commands:',
+  specSizes: 'Spec sizes:',
+  specDesc: 'Spec management commands',
+  createDesc: 'Create a new spec from a feature description',
+  createOptName: 'Spec name (default: auto-generated)',
+  createOptSize: 'Spec size: small | medium | large',
+  createOptPrompt: 'Generate prompt without running Claude Code',
+  documentDesc: 'Reverse engineer existing code into a spec',
+  documentOptName: 'Spec name (default: derived from path)',
+  documentOptPrompt: 'Save prompt instead of invoking Claude Code',
+  executeDesc: 'Execute next task from a spec via Claude Code',
+  executeOptTask: 'Specific task ID (default: next pending)',
+  executeOptDry: 'Show what would be done without executing',
+  executeOptPrompt: 'Generate prompt without executing',
+  statusDesc: 'Show spec progress and project overview',
+  statusOptVerbose: 'Show individual task details',
+  refreshDesc: 'Update project map specs (living documentation)',
+  refreshOptPrompt: 'Skip execution (requires engine)',
+  archDesc: 'Generate architecture views from all specs',
+  archOptLevel: 'View level: system | services | modules',
+  archOptFlow: 'Show flow diagram for a specific feature',
+  archOptOutput: 'Output directory (default: specs/_arch/)',
+  archOptPrompt: 'Generate prompt without running Claude Code',
+  initDesc: 'Initialize sdd-kit in project (creates steering docs + CLAUDE.md)',
+  initOptAuto: 'Auto-generate steering from map specs (requires sdd spec document first)',
+  examples: 'Examples:',
+  output: 'Output:',
+  sizeSmall: 'tasks.md only          bug fixes, tweaks',
+  sizeMedium: 'requirements + tasks   clear features (1-3 days)',
+  sizeLarge: 'full spec (3 files)    complex / new architecture',
+  newSpec: 'new feature spec',
+  justTasks: 'just tasks',
+  reverseEng: 'reverse engineer code',
+  projectOverview: 'project overview',
+  archDashboard: 'architecture dashboard',
+  refreshAll: 'refresh all map specs',
+  refreshOne: 'refresh one directory',
+  initManual: 'create template steering docs (manual edit)',
+  initAuto: 'auto-generate from specs/_map/',
+  executeSpec: 'execute next task',
+  executeTask: 'execute specific task',
+  executeDry: 'preview without executing',
+  mermaid: 'Mermaid diagrams — renders on GitHub',
+  dashboard: 'Interactive dashboard — open in browser',
+};
+
 const program = new Command();
 
 program
   .name('sdd')
-  .description('🧠 Spec-Driven Development Kit — language agnostic, AI-powered')
-  .version('0.2.0')
+  .description(`🧠 ${t.desc}`)
+  .version('0.3.0')
   .addHelpText('after', `
-${chalk.bold('Quick start:')}
-  ${chalk.cyan('sdd spec create')} "JWT authentication"          ${chalk.dim('→ new feature spec')}
-  ${chalk.cyan('sdd spec create')} "Fix 422 on login" --size small ${chalk.dim('→ just tasks')}
-  ${chalk.cyan('sdd spec document')} src/auth/                    ${chalk.dim('→ reverse engineer code')}
-  ${chalk.cyan('sdd spec status')}                               ${chalk.dim('→ project overview')}
-  ${chalk.cyan('sdd arch')}                                      ${chalk.dim('→ architecture dashboard')}
+${chalk.bold(t.quickStart)}
+  ${chalk.cyan('sdd init')}                                       ${chalk.dim(`→ ${t.initManual}`)}
+  ${chalk.cyan('sdd spec create')} "JWT authentication"           ${chalk.dim(`→ ${t.newSpec}`)}
+  ${chalk.cyan('sdd spec document')} src/auth/                    ${chalk.dim(`→ ${t.reverseEng}`)}
+  ${chalk.cyan('sdd spec execute')} feat-jwt-auth                 ${chalk.dim(`→ ${t.executeSpec}`)}
+  ${chalk.cyan('sdd spec status')}                                ${chalk.dim(`→ ${t.projectOverview}`)}
+  ${chalk.cyan('sdd spec refresh')}                               ${chalk.dim(`→ ${t.refreshAll}`)}
+  ${chalk.cyan('sdd arch')}                                       ${chalk.dim(`→ ${t.archDashboard}`)}
 
-${chalk.bold('Spec sizes:')}
-  ${chalk.red('small')}   tasks.md only          bug fixes, tweaks
-  ${chalk.yellow('medium')}  requirements + tasks   clear features (1-3 days)
-  ${chalk.green('large')}   full spec (3 files)    complex / new architecture
+${chalk.bold(t.specSizes)}
+  ${chalk.red('small')}   ${t.sizeSmall}
+  ${chalk.yellow('medium')}  ${t.sizeMedium}
+  ${chalk.green('large')}   ${t.sizeLarge}
   `);
 
 // ─── sdd spec ─────────────────────────────────────────────────────────────
 
-const spec = program.command('spec').description('Spec management commands');
+const spec = program.command('spec').description(t.specDesc);
 
 spec
   .command('create <description>')
-  .description('Create a new spec from a feature description')
-  .option('-n, --name <name>',       'Spec name (default: auto-generated)')
-  .option('-s, --size <size>',       'Spec size: small | medium | large', 'large')
-  .option('-p, --prompt-only',       'Generate Claude Code prompt (no API call)')
+  .description(t.createDesc)
+  .option('-n, --name <name>',  t.createOptName)
+  .option('-s, --size <size>',  t.createOptSize, 'large')
+  .option('-p, --prompt-only',  t.createOptPrompt)
   .addHelpText('after', `
-${chalk.bold('Examples:')}
+${chalk.bold(t.examples)}
   sdd spec create "Fix 422 on login endpoint" --size small
   sdd spec create "JWT refresh tokens" --size medium
   sdd spec create "Hybrid RAG search pipeline" --name rag-search
@@ -61,11 +164,11 @@ ${chalk.bold('Examples:')}
 
 spec
   .command('document <path>')
-  .description('Reverse engineer existing code into a spec')
-  .option('-n, --name <name>',  'Spec name (default: derived from path)')
-  .option('-p, --prompt-only',  'Save prompt instead of invoking Claude Code')
+  .description(t.documentDesc)
+  .option('-n, --name <name>',  t.documentOptName)
+  .option('-p, --prompt-only',  t.documentOptPrompt)
   .addHelpText('after', `
-${chalk.bold('Examples:')}
+${chalk.bold(t.examples)}
   sdd spec document src/auth/
   sdd spec document app/services/rag_service.py --name rag-service
   sdd spec document src/components/Dashboard.tsx --prompt-only
@@ -76,15 +179,15 @@ ${chalk.bold('Examples:')}
 
 spec
   .command('execute <spec-name>')
-  .description('Execute tasks from a spec (generates Claude Code prompt)')
-  .option('-t, --task <id>',   'Specific task ID (default: next pending)')
-  .option('--dry-run',         'Show what would be done without output')
-  .option('-p, --prompt-only', 'Alias for default behavior')
+  .description(t.executeDesc)
+  .option('-t, --task <id>',   t.executeOptTask)
+  .option('--dry-run',         t.executeOptDry)
+  .option('-p, --prompt-only', t.executeOptPrompt)
   .addHelpText('after', `
-${chalk.bold('Examples:')}
-  sdd spec execute feat-jwt-auth
-  sdd spec execute feat-jwt-auth --task 1.2
-  sdd spec execute feat-rag-search --dry-run
+${chalk.bold(t.examples)}
+  sdd spec execute feat-jwt-auth                ${chalk.dim(`→ ${t.executeSpec}`)}
+  sdd spec execute feat-jwt-auth --task 1.2     ${chalk.dim(`→ ${t.executeTask}`)}
+  sdd spec execute feat-rag-search --dry-run    ${chalk.dim(`→ ${t.executeDry}`)}
   `)
   .action((specName, opts) => {
     executeCmd({ specName, taskId: opts.task, dryRun: opts.dryRun, promptOnly: opts.promptOnly });
@@ -92,10 +195,10 @@ ${chalk.bold('Examples:')}
 
 spec
   .command('status [spec-name]')
-  .description('Show spec progress and project overview')
-  .option('-v, --verbose', 'Show individual task details')
+  .description(t.statusDesc)
+  .option('-v, --verbose', t.statusOptVerbose)
   .addHelpText('after', `
-${chalk.bold('Examples:')}
+${chalk.bold(t.examples)}
   sdd spec status
   sdd spec status feat-jwt-auth --verbose
   `)
@@ -105,12 +208,12 @@ ${chalk.bold('Examples:')}
 
 spec
   .command('refresh [dir]')
-  .description('Update module specs (living documentation)')
-  .option('-p, --prompt-only', 'Skip Claude Code (no-op for refresh)')
+  .description(t.refreshDesc)
+  .option('-p, --prompt-only', t.refreshOptPrompt)
   .addHelpText('after', `
-${chalk.bold('Examples:')}
-  sdd spec refresh                ${chalk.dim('→ refresh all module specs')}
-  sdd spec refresh src/core       ${chalk.dim('→ refresh one directory')}
+${chalk.bold(t.examples)}
+  sdd spec refresh                ${chalk.dim(`→ ${t.refreshAll}`)}
+  sdd spec refresh src/core       ${chalk.dim(`→ ${t.refreshOne}`)}
   `)
   .action((dir, opts) => {
     refreshCmd({ dir, promptOnly: opts.promptOnly || false });
@@ -120,17 +223,17 @@ ${chalk.bold('Examples:')}
 
 program
   .command('arch')
-  .description('Generate architecture views from all specs')
-  .option('-l, --level <level>',  'View level: system | services | modules', 'system')
-  .option('-f, --flow <feature>', 'Show flow diagram for a specific feature')
-  .option('-o, --output <path>',  'Output directory (default: specs/_arch/)')
-  .option('-p, --prompt-only',    'Generate Claude Code prompt (no API call)')
+  .description(t.archDesc)
+  .option('-l, --level <level>',  t.archOptLevel, 'system')
+  .option('-f, --flow <feature>', t.archOptFlow)
+  .option('-o, --output <path>',  t.archOptOutput)
+  .option('-p, --prompt-only',    t.archOptPrompt)
   .addHelpText('after', `
-${chalk.bold('Output:')}
-  specs/_arch/architecture.md   ${chalk.dim('Mermaid diagrams — renders on GitHub')}
-  specs/_arch/dashboard.html    ${chalk.dim('Interactive dashboard — open in browser')}
+${chalk.bold(t.output)}
+  specs/_arch/architecture.md   ${chalk.dim(t.mermaid)}
+  specs/_arch/dashboard.html    ${chalk.dim(t.dashboard)}
 
-${chalk.bold('Examples:')}
+${chalk.bold(t.examples)}
   sdd arch
   sdd arch --level services
   sdd arch --flow feat-jwt-auth
@@ -144,12 +247,12 @@ ${chalk.bold('Examples:')}
 
 program
   .command('init')
-  .description('Initialize sdd-kit in current project (creates steering docs)')
-  .option('-a, --auto', 'Auto-generate steering docs from module specs (requires sdd spec document first)')
+  .description(t.initDesc)
+  .option('-a, --auto', t.initOptAuto)
   .addHelpText('after', `
-${chalk.bold('Examples:')}
-  sdd init                ${chalk.dim('→ create template steering docs (manual edit)')}
-  sdd init --auto         ${chalk.dim('→ auto-generate from specs/_modules/')}
+${chalk.bold(t.examples)}
+  sdd init                ${chalk.dim(`→ ${t.initManual}`)}
+  sdd init --auto         ${chalk.dim(`→ ${t.initAuto}`)}
   `)
   .action((opts) => {
     import('./commands/init.js').then(m => m.initCmd({ auto: opts.auto || false }));

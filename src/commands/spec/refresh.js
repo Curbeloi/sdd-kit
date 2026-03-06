@@ -31,9 +31,9 @@ export async function refreshModule({ dir, cwd }) {
   const prompt = buildGroupPrompt(label, allFiles);
   const analysis = await askClaude(prompt, { maxTokens: 2000, cwd });
 
-  const modulesDir = path.join(cwd, 'specs', '_modules');
-  fs.mkdirSync(modulesDir, { recursive: true });
-  const specPath = path.join(modulesDir, `${label}.spec.md`);
+  const mapDir = path.join(cwd, 'specs', '_map');
+  fs.mkdirSync(mapDir, { recursive: true });
+  const specPath = path.join(mapDir, `${label}.spec.md`);
   fs.writeFileSync(specPath, analysis, 'utf-8');
 }
 
@@ -104,10 +104,10 @@ export async function refreshCmd({ dir, promptOnly, cwd = process.cwd() }) {
           spinner.fail(`  [${i + 1}/${items.length}] ${chalk.blue(label)} ${chalk.red('failed')}`);
           console.error(chalk.dim(`    ${err.message}`));
         } else {
-          const modulesDir = path.join(cwd, 'specs', '_modules');
-          fs.mkdirSync(modulesDir, { recursive: true });
+          const mapDir = path.join(cwd, 'specs', '_map');
+          fs.mkdirSync(mapDir, { recursive: true });
           const slugLabel = label === 'root' ? 'root' : label.replace(/[/\\]+/g, '-').toLowerCase();
-          fs.writeFileSync(path.join(modulesDir, `${slugLabel}.spec.md`), result, 'utf-8');
+          fs.writeFileSync(path.join(mapDir, `${slugLabel}.spec.md`), result, 'utf-8');
 
           const elapsed = Math.floor((Date.now() - startTimes.get(i)) / 1000);
           spinner.succeed(`  [${i + 1}/${items.length}] ${chalk.blue(label)} ${chalk.green('updated')} ${chalk.dim(`${elapsed}s`)}`);
@@ -118,5 +118,5 @@ export async function refreshCmd({ dir, promptOnly, cwd = process.cwd() }) {
     clearInterval(heartbeat);
   }
 
-  console.log(chalk.dim(`\n  Module specs: specs/_modules/*.spec.md\n`));
+  console.log(chalk.dim(`\n  Module specs: specs/_map/*.spec.md\n`));
 }
