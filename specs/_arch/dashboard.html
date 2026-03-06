@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>sdd-kit — Architecture Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0e14; --surface: #12161e; --surface-hover: #1a1f2b;
+    --border: #232830; --border-light: #2d333b;
+    --text: #e6edf3; --text-secondary: #9ca3af; --muted: #6b7280;
+    --accent: #3b82f6; --accent-soft: rgba(59,130,246,0.12);
+    --green: #22c55e; --green-soft: rgba(34,197,94,0.12);
+    --yellow: #eab308; --yellow-soft: rgba(234,179,8,0.12);
+    --orange: #f97316; --orange-soft: rgba(249,115,22,0.12);
+    --purple: #a78bfa; --purple-soft: rgba(167,139,250,0.08);
+    --red: #ef4444;
+    --radius: 10px; --radius-sm: 6px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.5; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  /* Layout */
+  .shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+  /* Sidebar */
+  .sidebar {
+    background: var(--surface); border-right: 1px solid var(--border);
+    padding: 0; position: sticky; top: 0; height: 100vh;
+    overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .logo {
+    padding: 24px 24px 20px; border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(59,130,246,0.06) 0%, transparent 100%);
+  }
+  .logo h2 { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; line-height: 1.3; }
+  .logo span { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: 0.02em; text-transform: uppercase; margin-top: 4px; display: block; }
+  nav { padding: 12px 12px; flex: 1; }
+  .nav-section {
+    padding: 16px 12px 6px; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted); font-weight: 600;
+  }
+  .nav-section:first-child { padding-top: 4px; }
+  .nav-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; font-size: 13px; font-weight: 500;
+    color: var(--text-secondary); text-decoration: none;
+    transition: all 0.15s ease; cursor: pointer;
+    border: none; background: none; width: 100%; text-align: left;
+    border-radius: var(--radius-sm); margin-bottom: 2px;
+  }
+  .nav-link:hover { color: var(--text); background: var(--surface-hover); }
+  .nav-link.active { color: var(--accent); background: var(--accent-soft); }
+  .nav-link .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; opacity: 0.8; }
+  .nav-link.active .dot { opacity: 1; box-shadow: 0 0 6px currentColor; }
+
+  /* Sidebar footer */
+  .sidebar-footer {
+    padding: 16px 24px; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--muted);
+  }
+  .sidebar-footer a { color: var(--accent); text-decoration: none; }
+
+  /* Main */
+  .main { padding: 40px 48px; overflow-y: auto; max-width: 1400px; }
+
+  /* Header */
+  .page-header { margin-bottom: 32px; }
+  .page-header h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  .page-header p { color: var(--text-secondary); font-size: 14px; margin-top: 6px; max-width: 700px; line-height: 1.6; }
+
+  /* Cards */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; margin-bottom: 20px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--border-light); }
+  .card-title {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 16px;
+  }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px 24px;
+    position: relative; overflow: hidden;
+  }
+  .stat::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .stat:nth-child(1)::before { background: var(--accent); }
+  .stat:nth-child(2)::before { background: var(--green); }
+  .stat:nth-child(3)::before { background: var(--purple); }
+  .stat:nth-child(4)::before { background: var(--orange); }
+  .stat-value { font-size: 32px; font-weight: 800; letter-spacing: -0.02em; }
+  .stat:nth-child(1) .stat-value { color: var(--accent); }
+  .stat:nth-child(2) .stat-value { color: var(--green); }
+  .stat:nth-child(3) .stat-value { color: var(--purple); }
+  .stat:nth-child(4) .stat-value { color: var(--orange); }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  /* Diagrams */
+  .diagram-container { overflow-x: auto; padding: 8px 0; }
+  .mermaid { min-width: 300px; }
+  pre.mermaid { text-align: center; background: transparent !important; }
+
+  /* Two column grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+  /* Feature list */
+  .feature-list { list-style: none; }
+  .feature-item {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+  }
+  .feature-item:last-child { border-bottom: none; }
+  .feature-name { flex: 1; font-weight: 500; }
+  .feature-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; }
+  .progress-bar { width: 100px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; }
+
+  /* Tech stack tags */
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag {
+    padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
+    background: var(--accent-soft); color: var(--accent);
+    border: 1px solid rgba(59,130,246,0.15);
+  }
+
+  /* Views */
+  .view { display: none; animation: fadeIn 0.2s ease; }
+  .view.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Status badges */
+  .badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+  .badge-complete { background: var(--green-soft); color: var(--green); }
+  .badge-progress { background: var(--orange-soft); color: var(--orange); }
+  .badge-planned { background: rgba(107,114,128,0.15); color: var(--muted); }
+
+  /* Decisions */
+  .decision {
+    padding: 12px 16px; border-left: 3px solid var(--purple);
+    background: var(--purple-soft); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    margin-bottom: 10px; font-size: 13px; line-height: 1.5; color: var(--text-secondary);
+  }
+
+  /* Components table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead { position: sticky; top: 0; background: var(--surface); }
+  th {
+    text-align: left; padding: 10px 16px; color: var(--muted);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border); font-weight: 600;
+  }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-hover); }
+  .type-service { color: var(--accent); font-weight: 600; }
+  .type-module { color: var(--green); font-weight: 600; }
+  .type-store { color: var(--yellow); font-weight: 600; }
+  .type-external { color: var(--orange); font-weight: 600; }
+
+  /* Responsive */
+  @media (max-width: 1024px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { position: fixed; left: -260px; z-index: 100; transition: left 0.3s ease; box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
+    .sidebar.open { left: 0; }
+    .main { padding: 24px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+    .menu-toggle { display: flex !important; }
+  }
+  .menu-toggle {
+    display: none; position: fixed; top: 16px; left: 16px; z-index: 101;
+    width: 40px; height: 40px; border-radius: var(--radius-sm);
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--text); cursor: pointer; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99; }
+  .overlay.active { display: block; }
+</style>
+</head>
+<body>
+
+<button class="menu-toggle" onclick="toggleSidebar()">&#9776;</button>
+<div class="overlay" onclick="toggleSidebar()"></div>
+
+<div class="shell">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <h2>sdd-kit</h2>
+      <span>Architecture Dashboard</span>
+    </div>
+    <nav>
+      <div class="nav-section">Views</div>
+      <button class="nav-link active" onclick="showView('overview', this)">
+        <span class="dot" style="background:var(--accent)"></span> Overview
+      </button>
+      <button class="nav-link" onclick="showView('services', this)">
+        <span class="dot" style="background:var(--green)"></span> Services
+      </button>
+      <button class="nav-link" onclick="showView('modules', this)">
+        <span class="dot" style="background:var(--purple)"></span> Modules
+      </button>
+      <div class="nav-section">Flows</div>
+      <button class="nav-link" onclick="showView('flow-spec-create', this)">
+      <span class="dot" style="background:var(--accent)"></span> spec-create
+    </button>
+<button class="nav-link" onclick="showView('flow-spec-document', this)">
+      <span class="dot" style="background:var(--accent)"></span> spec-document
+    </button>
+<button class="nav-link" onclick="showView('flow-spec-execute-with-living-docs', this)">
+      <span class="dot" style="background:var(--accent)"></span> spec-execute-with-living-docs
+    </button>
+<button class="nav-link" onclick="showView('flow-arch-generation', this)">
+      <span class="dot" style="background:var(--accent)"></span> arch-generation
+    </button>
+<button class="nav-link" onclick="showView('flow-init', this)">
+      <span class="dot" style="background:var(--accent)"></span> init
+    </button>
+      <div class="nav-section">Project</div>
+      <button class="nav-link" onclick="showView('features', this)">
+        <span class="dot" style="background:var(--yellow)"></span> Features
+      </button>
+      <button class="nav-link" onclick="showView('components', this)">
+        <span class="dot" style="background:var(--orange)"></span> Components
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      Generated by <a href="https://github.com/icurbe/sdd-kit">sdd-kit</a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- OVERVIEW VIEW -->
+    <div id="view-overview" class="view active">
+      <div class="page-header">
+        <h1>System Overview</h1>
+        <p>Spec-Driven Development Kit for Claude Code — a CLI tool that generates, executes, and tracks feature specs using AI, with living documentation that stays in sync via git-diff-triggered refresh.</p>
+      </div>
+      <div class="stats">
+        <div class="stat"><div class="stat-value">8</div><div class="stat-label">Features</div></div>
+        <div class="stat"><div class="stat-value">0</div><div class="stat-label">Complete</div></div>
+        <div class="stat"><div class="stat-value">0</div><div class="stat-label">Tasks Done</div></div>
+        <div class="stat"><div class="stat-value">0</div><div class="stat-label">Total Tasks</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">System Architecture</div>
+        <div class="diagram-container">
+          <pre class="mermaid">flowchart TD
+    User["👤 Developer"]
+    CLI["sdd CLI<br/>(cli.js — Commander.js)"]
+    Commands["Commands Layer<br/>(commands/)"]
+    Core["Core Engine<br/>(core/)"]
+    ClaudeCLI["Claude Code CLI<br/>(subprocess)"]
+    ClaudeSDK["Claude API<br/>(@anthropic-ai/sdk)"]
+    FS["File System<br/>(specs/, .claude/)"]
+    Git["Git"]
+
+    User -->|"sdd &lt;command&gt;"| CLI
+    CLI -->|routes subcommands| Commands
+    Commands -->|delegates logic| Core
+    Core -->|spawns subprocess| ClaudeCLI
+    Core -->|SDK calls| ClaudeSDK
+    Core -->|reads/writes| FS
+    Core -->|diff / snapshot| Git
+    Commands -->|UX: spinners, color| User
+
+---</pre>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-title">Tech Stack</div>
+          <div class="tags"><span class="tag">Node.js (ESM)</span><span class="tag">Commander.js (CLI framework)</span><span class="tag">@anthropic-ai/sdk (Claude API)</span><span class="tag">Claude Code CLI (subprocess)</span><span class="tag">chalk (terminal colors)</span><span class="tag">ora (spinners)</span><span class="tag">Mermaid (architecture diagrams)</span><span class="tag">Git (change detection)</span></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Key Decisions</div>
+          <div class="decision">Dual AI engine — SDK for speed/parallelism, CLI subprocess as fallback; auto-detected at runtime</div><div class="decision">promptOnly fallback — every AI command degrades gracefully to a saved markdown prompt file</div><div class="decision">Living docs loop — execute.js uses git diff post-task to auto-refresh only affected module specs</div><div class="decision">Thin command layer — commands handle UX only (spinners, color), all logic lives in core/</div><div class="decision">stream-json output — generator.js parses Claude Code tool calls incrementally for real-time progress</div><div class="decision">Lazy loading — init.js is dynamically imported to avoid load cost unless invoked</div><div class="decision">CLAUDECODE env cleanup — both claude-api.js and generator.js delete process.env.CLAUDECODE before spawning to bypass nested-session block</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SERVICES VIEW -->
+    <div id="view-services" class="view">
+      <div class="page-header">
+        <h1>Services Map</h1>
+        <p>Service-to-service relationships and data flow</p>
+      </div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">flowchart LR
+    subgraph CLI_Layer["CLI Layer"]
+        cli["cli.js<br/>arg parsing + routing"]
+    end
+
+    subgraph Command_Handlers["Command Handlers"]
+        create["spec create"]
+        document["spec document"]
+        execute["spec execute"]
+        status["spec status"]
+        refresh["spec refresh"]
+        arch["arch"]
+        init["init"]
+    end
+
+    subgraph Core_Services["Core Services"]
+        generator["generator.js<br/>prompt templates + Claude Code calls"]
+        claudeApi["claude-api.js<br/>SDK / CLI dual engine"]
+        scanner["scanner.js<br/>directory tree → analysis prompts"]
+        specReader["spec-reader.js<br/>spec & steering I/O"]
+        gitChanges["git-changes.js<br/>diff snapshots"]
+        progress["progress.js<br/>ora spinner callback"]
+    end
+
+    subgraph External["External"]
+        claudeCode["Claude Code CLI"]
+        anthropicSDK["Anthropic SDK"]
+        gitBin["git binary"]
+    end
+
+    subgraph Artifacts["Artifacts on Disk"]
+        specsFeatures["specs/features/*.md"]
+        specsMap["specs/_map/*.spec.md"]
+        specsArch["specs/_arch/"]
+        steering[".claude/steering/"]
+        claudeMd["CLAUDE.md"]
+    end
+
+    cli --> create & document & execute & status & refresh & arch & init
+
+    create --> generator
+    create --> specReader
+    document --> scanner
+    document --> claudeApi
+    execute --> generator
+    execute --> specReader
+    execute --> gitChanges
+    execute --> refresh
+    refresh --> claudeApi
+    refresh --> specReader
+    arch --> specReader
+    arch --> generator
+    init --> claudeApi
+    init --> specReader
+    status --> specReader
+
+    generator --> claudeCode
+    claudeApi --> claudeCode
+    claudeApi --> anthropicSDK
+    gitChanges --> gitBin
+
+    specReader --> specsFeatures & specsMap & steering
+    generator --> specsFeatures
+    scanner --> specsMap
+    arch --> specsArch
+    init --> steering & claudeMd
+
+---</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODULES VIEW -->
+    <div id="view-modules" class="view">
+      <div class="page-header">
+        <h1>Module Breakdown</h1>
+        <p>Code organization by domain and layer</p>
+      </div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">flowchart TD
+    subgraph root["Root (cli.js)"]
+        cli["cli.js<br/>Commander.js program<br/>bilingual EN/ES help"]
+    end
+
+    subgraph commands["commands/"]
+        subgraph spec_cmds["spec/"]
+            create["create.js<br/>Generate feature specs"]
+            document["document.js<br/>Reverse-engineer code → specs"]
+            execute["execute.js<br/>Run next pending task"]
+            status["status.js<br/>Progress dashboard"]
+            refresh["refresh.js<br/>Living doc refresh"]
+        end
+        arch["arch.js<br/>Architecture views + dashboard"]
+        init["init.js<br/>Project scaffolding"]
+    end
+
+    subgraph core["core/"]
+        generator["generator.js<br/>Claude Code subprocess<br/>stream-json parsing<br/>size-aware prompts"]
+        claudeApi["claude-api.js<br/>Dual engine: SDK + CLI<br/>batchAsk parallelism"]
+        scanner["scanner.js<br/>Directory walker<br/>file grouping<br/>prompt builder"]
+        specReader["spec-reader.js<br/>Spec/steering/map reader<br/>task parser"]
+        gitChanges["git-changes.js<br/>Diff snapshots<br/>affected dir detection"]
+        progress["progress.js<br/>Ora spinner + tool-call display"]
+    end
+
+    cli --> create & document & execute & status & refresh & arch
+    cli -.->|lazy import| init
+
+    create --> generator & specReader
+    document --> scanner & claudeApi
+    execute --> generator & specReader & gitChanges
+    execute --> refresh
+    refresh --> claudeApi & specReader
+    arch --> specReader & generator
+    init --> claudeApi & specReader
+
+    generator --> progress
+    claudeApi --> progress
+
+---</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- FLOW VIEWS -->
+    <div id="view-flow-spec-create" class="view">
+      <div class="page-header"><h1>Flow: spec-create</h1></div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">sequenceDiagram
+    participant Dev as Developer
+    participant CLI as sdd CLI
+    participant Create as spec/create.js
+    participant Gen as generator.js
+    participant Claude as Claude Code CLI
+    participant FS as File System
+
+    Dev->>CLI: sdd spec create "JWT auth" --size large
+    CLI->>Create: createCmd({ description, size })
+    Create->>Gen: detectMode(promptOnly)
+    alt Claude Code available
+        Create->>Gen: generateCreateSpec(description, size)
+        Gen->>Claude: spawn claude --output-format stream-json
+        Claude-->>Gen: streamed tool calls + text
+        Gen-->>Create: spec content (requirements, design, tasks)
+        Create->>FS: write specs/features/feat-jwt-auth/
+    else promptOnly or unavailable
+        Create->>FS: save prompt markdown for manual use
+    end
+    Create-->>Dev: spec files created ✓</pre>
+        </div>
+      </div>
+    </div>
+<div id="view-flow-spec-document" class="view">
+      <div class="page-header"><h1>Flow: spec-document</h1></div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">sequenceDiagram
+    participant Dev as Developer
+    participant CLI as sdd CLI
+    participant Doc as spec/document.js
+    participant Scanner as scanner.js
+    participant API as claude-api.js
+    participant Claude as Claude Engine
+    participant FS as File System
+
+    Dev->>CLI: sdd spec document src/auth/
+    CLI->>Doc: documentCmd({ source })
+    Doc->>Scanner: scanTree(source)
+    Scanner-->>Doc: file tree + groups
+    Doc->>Scanner: groupByDirectory(tree)
+    loop Each directory group (parallel)
+        Doc->>Scanner: buildGroupPrompt(dir, files)
+        Doc->>API: batchAsk(prompts)
+        API->>Claude: per-directory analysis
+        Claude-->>API: partial spec markdown
+    end
+    Doc->>Scanner: buildSynthesisPrompt(partials)
+    Doc->>API: askClaude(synthesisPrompt)
+    API->>Claude: synthesize unified spec
+    Claude-->>Doc: final module spec
+    Doc->>FS: write specs/_map/{name}.spec.md
+    Doc-->>Dev: documentation complete ✓</pre>
+        </div>
+      </div>
+    </div>
+<div id="view-flow-spec-execute-with-living-docs" class="view">
+      <div class="page-header"><h1>Flow: spec-execute-with-living-docs</h1></div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">sequenceDiagram
+    participant Dev as Developer
+    participant CLI as sdd CLI
+    participant Exec as spec/execute.js
+    participant Reader as spec-reader.js
+    participant Gen as generator.js
+    participant Git as git-changes.js
+    participant Refresh as spec/refresh.js
+    participant Claude as Claude Code CLI
+    participant FS as File System
+
+    Dev->>CLI: sdd spec execute feat-jwt-auth
+    CLI->>Exec: executeCmd({ specName })
+    Exec->>Reader: readSpec("feat-jwt-auth")
+    Reader-->>Exec: spec + tasks
+    Exec->>Reader: findNextPendingTask(tasks)
+    Reader-->>Exec: task 1.1
+    Exec->>Git: snapshotBefore(cwd)
+    Git-->>Exec: pre-execution file hashes
+    Exec->>Gen: executeTask(spec, task, context)
+    Gen->>Claude: spawn claude with task prompt
+    Claude-->>Gen: code changes applied
+    Gen-->>Exec: execution complete
+    Exec->>Git: getChangedSince(snapshot)
+    Git-->>Exec: list of changed files
+    Exec->>Git: getAffectedModuleDirs(changedFiles)
+    Git-->>Exec: affected directories
+    loop Each affected directory
+        Exec->>Refresh: refreshModule({ dir })
+        Refresh->>FS: update specs/_map/{dir}.spec.md
+    end
+    Exec-->>Dev: task done + living docs refreshed ✓</pre>
+        </div>
+      </div>
+    </div>
+<div id="view-flow-arch-generation" class="view">
+      <div class="page-header"><h1>Flow: arch-generation</h1></div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">sequenceDiagram
+    participant Dev as Developer
+    participant CLI as sdd CLI
+    participant Arch as arch.js
+    participant Reader as spec-reader.js
+    participant Gen as generator.js
+    participant Claude as Claude Code CLI
+    participant FS as File System
+
+    Dev->>CLI: sdd arch
+    CLI->>Arch: archCmd({ level })
+    Arch->>Reader: readAllSpecs(cwd)
+    Arch->>Reader: readModuleSpecs(cwd)
+    Arch->>Reader: readSteering(cwd)
+    Reader-->>Arch: all specs + steering context
+    Arch->>Gen: generateArchitecture(context)
+    Gen->>Claude: spawn claude with architecture prompt
+    Claude-->>Gen: architecture.md content
+    Gen-->>Arch: markdown with Mermaid diagrams
+    Arch->>FS: write specs/_arch/architecture.md
+    Arch->>FS: generate specs/_arch/dashboard.html
+    Arch-->>Dev: architecture views ready ✓</pre>
+        </div>
+      </div>
+    </div>
+<div id="view-flow-init" class="view">
+      <div class="page-header"><h1>Flow: init</h1></div>
+      <div class="card">
+        <div class="diagram-container">
+          <pre class="mermaid">sequenceDiagram
+    participant Dev as Developer
+    participant CLI as sdd CLI
+    participant Init as init.js
+    participant API as claude-api.js
+    participant Reader as spec-reader.js
+    participant FS as File System
+
+    Dev->>CLI: sdd init --auto
+    CLI->>Init: initCmd({ auto: true })
+    Init->>FS: scaffold .claude/steering/ + specs/features/
+    Init->>Reader: readModuleSpecs(cwd)
+    Reader-->>Init: existing module specs
+    Init->>API: askClaude(steering generation prompt)
+    API-->>Init: generated steering docs
+    Init->>FS: write .claude/steering/*.md
+    Init->>FS: inject SDD block into CLAUDE.md
+    Init-->>Dev: project initialized ✓
+
+---</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- FEATURES VIEW -->
+    <div id="view-features" class="view">
+      <div class="page-header">
+        <h1>Features</h1>
+        <p>All spec-defined features and their progress</p>
+      </div>
+      <div class="card">
+        <ul class="feature-list"><li class="feature-item">
+      <div class="feature-name">Spec Creation</div>
+      <div class="feature-meta">0/0 tasks</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--muted)"></div></div>
+      <span class="badge badge-planned">planned</span>
+    </li>
+<li class="feature-item">
+      <div class="feature-name">Code Documentation</div>
+      <div class="feature-meta">0/0 tasks</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--muted)"></div></div>
+      <span class="badge badge-planned">planned</span>
+    </li>
+<li class="feature-item">
+      <div class="feature-name">Task Execution</div>
+      <div class="feature-meta">0/0 tasks</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--muted)"></div></div>
+      <span class="badge badge-planned">planned</span>
+    </li>
+<li class="feature-item">
+      <div class="feature-name">Living Docs Refresh</div>
+      <div class="feature-meta">0/0 tasks</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--muted)"></div></div>
+      <span class="badge badge-planned">planned</span>
+    </li>
+<li class="feature-item">
+      <div class="feature-name">Progress Dashboard</div>
+      <div class="feature-meta">0/0 tasks</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--muted)"></div></div>
+      <span class="badge badge-planned">planned</span>
+    </li>
+<li class="feature-item">
+      <div class="feature-name">Architecture Views</div>
+      <div class="feature-meta">0/0 tasks</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--muted)"></div></div>
+      <span class="badge badge-planned">planned</span>
+    </li>
+<li class="feature-item">
+      <div class="feature-name">Project Init + Steering</div>
+      <div class="feature-meta">0/0 tasks</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--muted)"></div></div>
+      <span class="badge badge-planned">planned</span>
+    </li>
+<li class="feature-item">
+      <div class="feature-name">Bilingual CLI (EN/ES)</div>
+      <div class="feature-meta">0/0 tasks</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--muted)"></div></div>
+      <span class="badge badge-planned">planned</span>
+    </li></ul>
+      </div>
+    </div>
+
+    <!-- COMPONENTS VIEW -->
+    <div id="view-components" class="view">
+      <div class="page-header">
+        <h1>Components</h1>
+        <p>System components by type and responsibility</p>
+      </div>
+      <div class="card">
+        <table>
+          <thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody><tr><td>cli.js</td><td class="type-module">module</td><td>Commander.js entrypoint with bilingual help (EN/ES), subcommand routing, and flattened help display</td></tr>
+<tr><td>spec/create.js</td><td class="type-module">module</td><td>Generates feature spec files (requirements, design, tasks) from natural language descriptions via Claude Code</td></tr>
+<tr><td>spec/document.js</td><td class="type-module">module</td><td>Reverse-engineers existing source code into module specs via parallel per-directory analysis and synthesis</td></tr>
+<tr><td>spec/execute.js</td><td class="type-module">module</td><td>Executes the next pending task in a spec via Claude Code; triggers living-doc refresh on affected modules</td></tr>
+<tr><td>spec/status.js</td><td class="type-module">module</td><td>Renders a terminal progress dashboard with progress bars and task checklists — no AI calls</td></tr>
+<tr><td>spec/refresh.js</td><td class="type-module">module</td><td>Updates specs/_map/ living documentation for one or all directories; also exported for programmatic use</td></tr>
+<tr><td>arch.js</td><td class="type-module">module</td><td>Generates architecture.md with Mermaid diagrams and an HTML dashboard from all specs and steering docs</td></tr>
+<tr><td>init.js</td><td class="type-module">module</td><td>Scaffolds .claude/steering/ and specs/features/; optionally auto-generates steering docs; injects SDD block into CLAUDE.md</td></tr>
+<tr><td>generator.js</td><td class="type-service">service</td><td>Core AI integration via Claude Code CLI subprocess with stream-json output; size-aware prompt templates</td></tr>
+<tr><td>claude-api.js</td><td class="type-service">service</td><td>Dual-engine Claude client — auto-selects Anthropic SDK (fast, parallel) or CLI subprocess fallback; supports batching</td></tr>
+<tr><td>scanner.js</td><td class="type-service">service</td><td>Directory tree walker that groups files and builds batched analysis prompts for code-to-spec generation</td></tr>
+<tr><td>spec-reader.js</td><td class="type-service">service</td><td>Pure-function reader for all spec artifacts: feature specs, module maps, steering files, and task parsing</td></tr>
+<tr><td>git-changes.js</td><td class="type-service">service</td><td>Detects changed files via git diff before/after task execution; identifies affected module directories</td></tr>
+<tr><td>progress.js</td><td class="type-service">service</td><td>Creates an ora-spinner progress callback showing elapsed time and active Claude tool calls</td></tr>
+<tr><td>Claude Code CLI</td><td class="type-external">external</td><td>Anthropic Claude Code binary spawned as subprocess for spec generation and task execution</td></tr>
+<tr><td>Anthropic SDK</td><td class="type-external">external</td><td>@anthropic-ai/sdk for direct API calls — used by claude-api.js as the preferred fast engine</td></tr>
+<tr><td>Git</td><td class="type-external">external</td><td>Git binary used for diff snapshots and change detection in the living-docs refresh loop</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    background: '#12161e',
+    primaryColor: '#1d4ed8',
+    primaryTextColor: '#e6edf3',
+    primaryBorderColor: '#3b82f6',
+    lineColor: '#3b82f6',
+    secondaryColor: '#1a1f2b',
+    tertiaryColor: '#1a1f2b',
+    noteBkgColor: '#1a1f2b',
+    noteTextColor: '#9ca3af',
+    noteBorderColor: '#232830',
+    actorBkg: '#12161e',
+    actorBorder: '#3b82f6',
+    actorTextColor: '#e6edf3',
+    signalColor: '#e6edf3',
+    signalTextColor: '#e6edf3',
+    labelBoxBkgColor: '#12161e',
+    labelBoxBorderColor: '#232830',
+    labelTextColor: '#9ca3af',
+    loopTextColor: '#9ca3af',
+    activationBorderColor: '#3b82f6',
+    activationBkgColor: '#1d4ed8',
+    sequenceNumberColor: '#e6edf3',
+  },
+  sequence: { mirrorActors: false, messageMargin: 40 },
+  flowchart: { htmlLabels: true, curve: 'basis' },
+});
+
+// Render only the overview diagrams on load (they are visible)
+mermaid.run({ querySelector: '#view-overview pre.mermaid' });
+
+const rendered = new Set(['overview']);
+function showView(name, btn) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  const view = document.getElementById('view-' + name);
+  if (view) {
+    view.classList.add('active');
+    if (!rendered.has(name)) {
+      rendered.add(name);
+      setTimeout(() => mermaid.run({ querySelector: '#view-' + name + ' pre.mermaid' }), 50);
+    }
+  }
+  if (btn) btn.classList.add('active');
+  document.querySelector('.sidebar').classList.remove('open');
+  document.querySelector('.overlay').classList.remove('active');
+}
+
+function toggleSidebar() {
+  document.querySelector('.sidebar').classList.toggle('open');
+  document.querySelector('.overlay').classList.toggle('active');
+}
+</script>
+</body>
+</html>
