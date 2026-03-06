@@ -120,6 +120,28 @@ program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
   .version('0.3.0')
+  .configureHelp({
+    visibleCommands(cmd) {
+      const cmds = [];
+      for (const sub of cmd.commands) {
+        if (sub.commands.length > 0) {
+          for (const child of sub.commands) {
+            child._sddPrefix = sub.name();
+            cmds.push(child);
+          }
+        } else {
+          cmds.push(sub);
+        }
+      }
+      return cmds.filter(c => c.name() !== 'help');
+    },
+    subcommandTerm(cmd) {
+      const prefix = cmd._sddPrefix ? `${cmd._sddPrefix} ` : '';
+      // Call default formatting then prepend prefix
+      const term = this.constructor.prototype.subcommandTerm.call(this, cmd);
+      return `${prefix}${term}`;
+    },
+  })
   .addHelpText('after', `
 ${chalk.bold(t.quickStart)}
   ${chalk.cyan('sdd init')}                                       ${chalk.dim(`→ ${t.initManual}`)}
