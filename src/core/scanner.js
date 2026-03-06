@@ -11,7 +11,7 @@ import chalk from 'chalk';
 const SOURCE_EXTS = new Set([
   '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
   '.py', '.rb', '.php', '.java', '.go', '.rs', '.c', '.cpp', '.h',
-  '.cs', '.swift', '.kt', '.scala', '.ex', '.exs',
+  '.cs', '.swift', '.kt', '.scala', '.ex', '.exs', '.dart',
   '.vue', '.svelte', '.astro',
   '.sql', '.graphql', '.gql', '.prisma',
   '.json', '.yaml', '.yml', '.toml', '.env.example',
@@ -22,9 +22,20 @@ const SOURCE_EXTS = new Set([
 ]);
 
 const SKIP_DIRS = new Set([
-  'node_modules', '.git', '__pycache__', '.next', '.nuxt', 'dist', 'build',
-  '.venv', 'venv', 'env', '.tox', 'target', 'vendor', '.cache',
-  'coverage', '.nyc_output', '.pytest_cache', '.mypy_cache', 'specs',
+  // JS / TS
+  'node_modules', '.next', '.nuxt', 'dist', 'build', '.cache',
+  'coverage', '.nyc_output',
+  // Python
+  '__pycache__', '.venv', 'venv', 'env', '.tox', '.pytest_cache', '.mypy_cache',
+  '.eggs',
+  // PHP
+  'vendor',
+  // Java / Kotlin
+  'target', '.gradle', '.mvn', 'out',
+  // Flutter / Dart
+  '.dart_tool', '.fvm',
+  // General
+  '.git', 'specs',
 ]);
 
 const MAX_FILE_SIZE = 50 * 1024;
@@ -58,7 +69,7 @@ export function scanTree(rootPath) {
       const relPath = path.relative(rootPath, fullPath);
 
       if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
+        if (SKIP_DIRS.has(entry.name) || entry.name.endsWith('.egg-info')) continue;
         dirs.push(relPath);
         walk(fullPath, depth + 1);
       } else if (entry.isFile()) {
