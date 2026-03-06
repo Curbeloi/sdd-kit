@@ -136,6 +136,7 @@ Rules:
 - Max 5 tasks, each < 30 min
 - Be specific: include file paths, function names
 - No requirements or design doc — just tasks
+- IMPORTANT: Task descriptions must be plain text — do NOT use backticks in the description. Only use a single backtick-quoted value at the end for the file path.
 
 Format:
 # Tasks: [title]
@@ -144,7 +145,7 @@ Format:
 [one sentence]
 
 ## Tasks
-- [ ] **1.1** Description \`path/to/file\`
+- [ ] **1.1** Description without backticks in the text \`path/to/file\`
 `,
   },
 
@@ -170,6 +171,7 @@ First, create requirements.md:
 
 Then, create tasks.md:
 Ordered atomic tasks. Max 8 total. Each < 2 hours.
+IMPORTANT: Task descriptions must be plain text — do NOT use backticks in the description. Only use a single backtick-quoted value at the end for the file path.
 - [ ] **1.1** Description \`path/to/file\` <- AC 1
 `,
   },
@@ -198,6 +200,7 @@ Write all files to specs/features/${specName}/
 
 3. tasks.md:
 Grouped by phase: Setup > Core Logic > API Layer > Tests
+IMPORTANT: Task descriptions must be plain text — do NOT use backticks in the description. Only use a single backtick-quoted value at the end for the file path.
 - [ ] **1.1** Description \`path/to/file\` <- Req 1.1
 `,
   },

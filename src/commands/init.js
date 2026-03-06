@@ -204,7 +204,7 @@ function ensureClaudeMd(cwd) {
  * Only runs if .claude/steering/ already exists (user opted in via `sdd init`).
  * Single Claude call → updates all 3 files.
  */
-export async function refreshSteering({ cwd = process.cwd(), silent = false } = {}) {
+export async function refreshSteering({ cwd = process.cwd(), silent = false, structuralChange = false } = {}) {
   const steeringDir = path.join(cwd, '.claude', 'steering');
   if (!fs.existsSync(steeringDir)) return; // user hasn't initialized steering
 
@@ -228,6 +228,18 @@ export async function refreshSteering({ cwd = process.cwd(), silent = false } = 
     if (fs.existsSync(fp)) currentSteering[f] = fs.readFileSync(fp, 'utf-8');
   }
 
+  // When structure changed (new files/dirs added or deleted), emphasize structure.md update
+  const structuralHint = structuralChange
+    ? `\n\nIMPORTANT: The project structure has changed (files/directories were added or removed).
+Pay special attention to structure.md — update the directory layout and any new conventions.
+Reflect new modules, moved files, or deleted directories accurately.`
+    : '';
+
+  // Determine which files to update: all 3 on structural change, only product+tech otherwise
+  const filesToUpdate = structuralChange
+    ? ['product.md', 'tech.md', 'structure.md']
+    : ['product.md', 'tech.md', 'structure.md'];
+
   const prompt = `Update these project steering documents based on the current codebase analysis.
 
 ## Current Module Specs
@@ -240,7 +252,7 @@ ${Object.entries(currentSteering).map(([name, content]) => `### ${name}\n${conte
 
 Update the 3 steering documents to reflect the current state of the project.
 Keep any user-written context that is still accurate. Add new information from module specs.
-Remove outdated information.
+Remove outdated information.${structuralHint}
 
 Return the 3 files separated by exactly this marker: ---FILE_SEPARATOR---
 Order: product.md, tech.md, structure.md
@@ -257,7 +269,10 @@ Return ONLY the markdown content for each file, no explanations.`;
           fs.writeFileSync(path.join(steeringDir, names[i]), parts[i], 'utf-8');
         }
       }
-      if (!silent) console.log(chalk.dim('  Steering docs updated (.claude/steering/)'));
+      if (!silent) {
+        const extra = structuralChange ? ' (structural changes detected)' : '';
+        console.log(chalk.dim(`  Steering docs updated (.claude/steering/)${extra}`));
+      }
     }
   } catch {
     // Non-critical — don't block the main operation

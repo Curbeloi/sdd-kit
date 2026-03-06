@@ -11,6 +11,7 @@ import { generateExecutePrompt, executeTask, detectMode, Mode } from '../../core
 import { createProgress } from '../../core/progress.js';
 import { refreshModule } from './refresh.js';
 import { refreshSteering } from '../init.js';
+import { snapshotBefore, getChangedSince, getAffectedModuleDirs } from '../../core/git-changes.js';
 
 export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = process.cwd() }) {
   const spec = readSpec(cwd, specName);
@@ -63,6 +64,9 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = p
   console.log(`\n${chalk.bold('sdd spec execute')} — ${chalk.cyan(specName)} task ${task.id}\n`);
 
   if (mode === Mode.CLAUDE) {
+    // Snapshot git state before execution
+    const snapshot = snapshotBefore(cwd);
+
     const spinner = ora(`Executing task ${task.id} via Claude Code...`).start();
     const onProgress = createProgress(spinner);
     try {
@@ -70,21 +74,40 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = p
       spinner.succeed(`Task ${task.id} executed by Claude Code`);
       console.log(chalk.dim(`  Check specs/features/${specName}/tasks.md for updated status.`));
 
-      // Post-task: refresh module spec for affected directory
-      if (task.file) {
-        const dir = path.dirname(task.file).split(path.sep)[0];
-        if (dir && dir !== '.') {
-          const refreshSpinner = ora(chalk.dim(`Updating module spec: ${dir}`)).start();
-          try {
-            await refreshModule({ dir: task.file.split(path.sep).slice(0, -1).join(path.sep) || '.', cwd });
-            refreshSpinner.succeed(chalk.dim(`Module spec updated: ${dir}`));
-          } catch {
-            refreshSpinner.info(chalk.dim(`Module spec not updated (run sdd spec refresh)`));
+      // Post-task: detect what actually changed via git diff
+      const changes = getChangedSince(snapshot, cwd);
+
+      if (changes.files.length > 0) {
+        const affectedDirs = getAffectedModuleDirs(changes.files);
+        // Filter to dirs that aren't specs/node_modules/etc.
+        const moduleDirs = affectedDirs.filter(d =>
+          d !== '.' && !d.startsWith('specs') && !d.startsWith('node_modules') && !d.startsWith('.claude')
+        );
+
+        if (moduleDirs.length > 0) {
+          console.log(chalk.dim(`\n  Detected changes in ${changes.files.length} file(s) across ${moduleDirs.length} module(s)`));
+
+          for (const dir of moduleDirs) {
+            const refreshSpinner = ora(chalk.dim(`  Updating module spec: ${dir}`)).start();
+            try {
+              await refreshModule({ dir, cwd });
+              refreshSpinner.succeed(chalk.dim(`  Module spec updated: ${dir}`));
+            } catch {
+              refreshSpinner.info(chalk.dim(`  Module spec not updated: ${dir} (run sdd spec refresh)`));
+            }
           }
         }
+
+        // Auto-refresh steering docs — flag structural changes
+        await refreshSteering({
+          cwd,
+          silent: false,
+          structuralChange: changes.hasStructuralChange,
+        });
+      } else {
+        // No git changes detected, still try steering refresh
+        await refreshSteering({ cwd, silent: false });
       }
-      // Auto-refresh steering docs
-      await refreshSteering({ cwd, silent: false });
     } catch (err) {
       onProgress.stop();
       spinner.fail(`Task ${task.id} failed`);

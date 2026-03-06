@@ -74,7 +74,10 @@ export function readSteering(cwd) {
 export function parseTasks(content) {
   if (!content) return [];
   const tasks = [];
-  const re = /^- \[([ xX])\]\s+\*\*(\d+(?:\.\d+)?)\*\*\s+([^`\n]+?)(?:\s+`([^`]+)`)?\s*(?:(?:<-|←).*)?$/gm;
+  // Regex allows backtick-quoted terms inside descriptions.
+  // The LAST backtick-quoted value that looks like a file path (contains / or .)
+  // is captured as the file reference.
+  const re = /^- \[([ xX])\]\s+\*\*(\d+(?:\.\d+)?)\*\*\s+(.+?)(?:\s+`([^`]*[/.][^`]*)`)?\s*(?:(?:<-|←).*)?$/gm;
   let m;
   while ((m = re.exec(content))) {
     tasks.push({
