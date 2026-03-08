@@ -21,13 +21,10 @@ const isES = LANG.startsWith('es');
 const t = isES ? {
   desc: 'Kit de Desarrollo Guiado por Specs — para Claude Code',
   quickStart: 'Inicio rápido:',
-  allCommands: 'Todos los comandos:',
-  specSizes: 'Tamaños de spec:',
+  specLevels: 'Niveles de spec:',
   specDesc: 'Comandos de gestión de specs',
-  createDesc: 'Crear spec desde una descripción de feature',
+  createDesc: 'Crear scaffold de spec para un feature',
   createOptName: 'Nombre del spec (default: auto-generado)',
-  createOptSize: 'Tamaño: small | medium | large',
-  createOptPrompt: 'Generar prompt sin ejecutar Claude Code',
   documentDesc: 'Documentar código existente en un spec',
   documentOptName: 'Nombre del spec (default: derivado del path)',
   documentOptPrompt: 'Guardar prompt en vez de invocar Claude Code',
@@ -48,11 +45,10 @@ const t = isES ? {
   initOptAuto: 'Auto-generar steering desde specs del mapa (requiere sdd spec document primero)',
   examples: 'Ejemplos:',
   output: 'Salida:',
-  sizeSmall: 'solo tasks.md          bug fixes, ajustes',
-  sizeMedium: 'requirements + tasks   features claros (1-3 días)',
-  sizeLarge: 'spec completo (3 arch)  features complejos / nueva arquitectura',
+  level1: 'solo tasks.md            bug fixes, ajustes',
+  level2: 'requirements + tasks     features claros (1-3 días)',
+  level3: 'spec completo (3 arch)   features complejos / arquitectura nueva',
   newSpec: 'nuevo spec de feature',
-  justTasks: 'solo tareas',
   reverseEng: 'documentar código existente',
   projectOverview: 'resumen del proyecto',
   archDashboard: 'dashboard de arquitectura',
@@ -68,13 +64,10 @@ const t = isES ? {
 } : {
   desc: 'Spec-Driven Development Kit — for Claude Code',
   quickStart: 'Quick start:',
-  allCommands: 'All commands:',
-  specSizes: 'Spec sizes:',
+  specLevels: 'Spec levels:',
   specDesc: 'Spec management commands',
-  createDesc: 'Create a new spec from a feature description',
+  createDesc: 'Scaffold a new spec for a feature',
   createOptName: 'Spec name (default: auto-generated)',
-  createOptSize: 'Spec size: small | medium | large',
-  createOptPrompt: 'Generate prompt without running Claude Code',
   documentDesc: 'Reverse engineer existing code into a spec',
   documentOptName: 'Spec name (default: derived from path)',
   documentOptPrompt: 'Save prompt instead of invoking Claude Code',
@@ -95,11 +88,10 @@ const t = isES ? {
   initOptAuto: 'Auto-generate steering from map specs (requires sdd spec document first)',
   examples: 'Examples:',
   output: 'Output:',
-  sizeSmall: 'tasks.md only          bug fixes, tweaks',
-  sizeMedium: 'requirements + tasks   clear features (1-3 days)',
-  sizeLarge: 'full spec (3 files)    complex / new architecture',
+  level1: 'tasks.md only            bug fixes, tweaks',
+  level2: 'requirements + tasks     clear features (1-3 days)',
+  level3: 'full spec (3 files)      complex / new architecture',
   newSpec: 'new feature spec',
-  justTasks: 'just tasks',
   reverseEng: 'reverse engineer code',
   projectOverview: 'project overview',
   archDashboard: 'architecture dashboard',
@@ -119,7 +111,7 @@ const program = new Command();
 program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
-  .version('0.3.3')
+  .version('0.3.5')
   .configureHelp({
     visibleCommands(cmd) {
       const cmds = [];
@@ -152,10 +144,10 @@ ${chalk.bold(t.quickStart)}
   ${chalk.cyan('sdd spec refresh')}                               ${chalk.dim(`→ ${t.refreshAll}`)}
   ${chalk.cyan('sdd arch')}                                       ${chalk.dim(`→ ${t.archDashboard}`)}
 
-${chalk.bold(t.specSizes)}
-  ${chalk.red('small')}   ${t.sizeSmall}
-  ${chalk.yellow('medium')}  ${t.sizeMedium}
-  ${chalk.green('large')}   ${t.sizeLarge}
+${chalk.bold(t.specLevels)}
+  ${chalk.red('-1')}   ${t.level1}
+  ${chalk.yellow('-2')}   ${t.level2}
+  ${chalk.green('-3')}   ${t.level3}
   `);
 
 // ─── sdd spec ─────────────────────────────────────────────────────────────
@@ -163,25 +155,22 @@ ${chalk.bold(t.specSizes)}
 const spec = program.command('spec').description(t.specDesc);
 
 spec
-  .command('create <description>')
+  .command('create [description]')
   .description(t.createDesc)
   .option('-n, --name <name>',  t.createOptName)
-  .option('-s, --size <size>',  t.createOptSize, 'large')
-  .option('-p, --prompt-only',  t.createOptPrompt)
+  .option('-1', 'tasks.md only')
+  .option('-2', 'requirements.md + tasks.md')
+  .option('-3', 'full spec: requirements + design + tasks (default)')
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
-  sdd spec create "Fix 422 on login endpoint" --size small
-  sdd spec create "JWT refresh tokens" --size medium
-  sdd spec create "Hybrid RAG search pipeline" --name rag-search
-  sdd spec create "WhatsApp webhook flow" --prompt-only
+  sdd spec create "Fix 422 on login endpoint" -1      ${chalk.dim('→ tasks only')}
+  sdd spec create "JWT refresh tokens" -2              ${chalk.dim('→ req + tasks')}
+  sdd spec create "Hybrid RAG search pipeline"         ${chalk.dim('→ full spec')}
+  sdd spec create --name feat-whatsapp-flow            ${chalk.dim('→ name only')}
   `)
   .action((description, opts) => {
-    const validSizes = ['small', 'medium', 'large'];
-    if (!validSizes.includes(opts.size)) {
-      console.error(chalk.red(`\n  Invalid size '${opts.size}'. Use: small | medium | large\n`));
-      process.exit(1);
-    }
-    createCmd({ description, name: opts.name, size: opts.size, promptOnly: opts.promptOnly || false });
+    const level = opts[1] ? 1 : opts[2] ? 2 : 3;
+    createCmd({ description, name: opts.name, level });
   });
 
 spec
