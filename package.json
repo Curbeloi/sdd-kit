@@ -1,6 +1,6 @@
 {
   "name": "sdd-kit",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Spec-Driven Development CLI — language-agnostic, works with any project",
   "keywords": [
     "sdd",
@@ -13,10 +13,10 @@
   ],
   "author": "iCurbe / Cognidata <hello@icurbe.com>",
   "license": "MIT",
-  "homepage": "https://github.com/icurbe/sdd-kit",
+  "homepage": "https://github.com/Curbeloi/sdd-kit",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/icurbe/sdd-kit.git"
+    "url": "git+https://github.com/Curbeloi/sdd-kit.git"
   },
   "type": "module",
   "bin": {
