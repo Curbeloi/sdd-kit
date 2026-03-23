@@ -14,6 +14,8 @@
  */
 
 import { spawn } from 'child_process';
+import { debugLog } from './log.js';
+import { getConfig } from './config.js';
 
 let _sdk = null;
 let _mode = null; // 'sdk' | 'cli' | null
@@ -42,7 +44,15 @@ export function getEngineName() {
  */
 async function getSdkClient() {
   if (_sdk) return _sdk;
-  const { default: Anthropic } = await import('@anthropic-ai/sdk');
+  let Anthropic;
+  try {
+    ({ default: Anthropic } = await import('@anthropic-ai/sdk'));
+  } catch (err) {
+    debugLog('claude-api', `SDK import failed: ${err.message}`);
+    throw new Error(
+      'Could not load @anthropic-ai/sdk. Install it with: npm install @anthropic-ai/sdk'
+    );
+  }
   _sdk = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   return _sdk;
 }
@@ -81,7 +91,8 @@ export async function askClaude(prompt, { maxTokens = 2000, cwd } = {}) {
  */
 export async function batchAsk(items, { concurrency, maxTokens = 2000, cwd, onItemDone } = {}) {
   const engine = detectEngine();
-  const maxConcurrency = concurrency || (engine === 'sdk' ? 4 : 2);
+  const configConcurrency = getConfig(cwd).concurrency;
+  const maxConcurrency = concurrency || (engine === 'sdk' ? configConcurrency : Math.min(configConcurrency, 2));
 
   const results = new Array(items.length);
   let cursor = 0;
@@ -112,17 +123,36 @@ export async function batchAsk(items, { concurrency, maxTokens = 2000, cwd, onIt
 // ─── SDK engine ───────────────────────────────────────────────────────────
 
 async function askSdk(prompt, { maxTokens }) {
-  const client = await getSdkClient();
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: maxTokens,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey && !apiKey.startsWith('sk-')) {
+    throw new Error(`Invalid ANTHROPIC_API_KEY — expected key starting with "sk-", got "${apiKey.slice(0, 6)}..."`);
+  }
 
-  return response.content
-    .filter(b => b.type === 'text')
-    .map(b => b.text)
-    .join('');
+  const client = await getSdkClient();
+
+  // 5-minute timeout via AbortController
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 300000);
+
+  try {
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt }],
+    }, { signal: controller.signal });
+
+    return response.content
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('');
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('SDK request timed out (5 min)');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ─── CLI engine ───────────────────────────────────────────────────────────

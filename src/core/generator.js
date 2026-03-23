@@ -8,6 +8,7 @@ import fs from 'fs';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import chalk from 'chalk';
+import { debugLog } from './log.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -22,7 +23,8 @@ async function isClaudeAvailable() {
   try {
     await execFileAsync('claude', ['--version'], { timeout: 5000 });
     _claudeAvailable = true;
-  } catch {
+  } catch (err) {
+    debugLog('generator', `Claude Code CLI not available: ${err.message}`);
     _claudeAvailable = false;
   }
   return _claudeAvailable;
@@ -93,7 +95,7 @@ async function callClaude(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', 
               onProgress({ done: true, cost: event.cost_usd || event.cost });
             }
           }
-        } catch { /* ignore non-JSON lines */ }
+        } catch (err) { debugLog('generator', `Non-JSON line in Claude output: ${line.slice(0, 80)}`); }
       }
     });
 
@@ -110,6 +112,7 @@ async function callClaude(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', 
     });
 
     proc.on('error', (err) => {
+      clearTimeout(timer);
       reject(new Error(`Claude Code failed: ${err.message}`));
     });
 
@@ -404,7 +407,7 @@ export function parseArchSections(raw) {
       .trim();
     if (current === 'FLOWS' && flowName) sections.flows[flowName] = content;
     else if (current === 'SUMMARY') {
-      try { sections.summary = JSON.parse(content.replace(/```json|```/g, '').trim()); } catch {}
+      try { sections.summary = JSON.parse(content.replace(/```json|```/g, '').trim()); } catch (err) { debugLog('generator', `Failed to parse arch summary JSON: ${err.message}`); }
     }
     else if (current !== 'FLOWS') sections[current.toLowerCase()] = content;
     buffer.length = 0;

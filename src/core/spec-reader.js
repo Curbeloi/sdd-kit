@@ -5,13 +5,10 @@
 
 import fs from 'fs';
 import path from 'path';
-
-const SPECS_DIR = 'specs/features';
-const MODULES_DIR = 'specs/_map';
-const STEERING_DIR = '.claude/steering';
+import { getConfig } from './config.js';
 
 export function readAllSpecs(cwd) {
-  const specsPath = path.join(cwd, SPECS_DIR);
+  const specsPath = path.join(cwd, getConfig(cwd).specsDir);
   if (!fs.existsSync(specsPath)) return [];
 
   return fs.readdirSync(specsPath, { withFileTypes: true })
@@ -21,7 +18,7 @@ export function readAllSpecs(cwd) {
 }
 
 export function readSpec(cwd, specName) {
-  const dir = path.join(cwd, SPECS_DIR, specName);
+  const dir = path.join(cwd, getConfig(cwd).specsDir, specName);
   if (!fs.existsSync(dir)) return null;
 
   const files = {};
@@ -45,7 +42,7 @@ export function readSpec(cwd, specName) {
  * Returns { moduleName: content } map.
  */
 export function readModuleSpecs(cwd) {
-  const dir = path.join(cwd, MODULES_DIR);
+  const dir = path.join(cwd, getConfig(cwd).modulesDir);
   if (!fs.existsSync(dir)) return {};
 
   const result = {};
@@ -60,7 +57,7 @@ export function readModuleSpecs(cwd) {
 }
 
 export function readSteering(cwd) {
-  const dir = path.join(cwd, STEERING_DIR);
+  const dir = path.join(cwd, getConfig(cwd).steeringDir);
   if (!fs.existsSync(dir)) return {};
 
   const result = {};
@@ -75,9 +72,9 @@ export function parseTasks(content) {
   if (!content) return [];
   const tasks = [];
   // Regex allows backtick-quoted terms inside descriptions.
-  // The LAST backtick-quoted value that looks like a file path (contains / or .)
-  // is captured as the file reference.
-  const re = /^- \[([ xX])\]\s+\*\*(\d+(?:\.\d+)?)\*\*\s+(.+?)(?:\s+`([^`]*[/.][^`]*)`)?\s*(?:(?:<-|←).*)?$/gm;
+  // The LAST backtick-quoted value is captured as the file reference.
+  // Supports multi-level IDs (1.2.3) and any path format in backticks.
+  const re = /^- \[([ xX])\]\s+\*\*(\d+(?:\.\d+)*)\*\*\s+(.+?)(?:\s+`([^`]+)`)?\s*(?:(?:<-|←).*)?$/gm;
   let m;
   while ((m = re.exec(content))) {
     tasks.push({

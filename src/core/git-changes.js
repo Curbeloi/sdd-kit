@@ -5,6 +5,7 @@
 
 import { execSync } from 'child_process';
 import path from 'path';
+import { debugLog } from './log.js';
 
 /**
  * Take a git snapshot (short SHA or index state) before a task runs.
@@ -16,8 +17,9 @@ export function snapshotBefore(cwd) {
     // We use the current HEAD + working tree diff approach.
     const head = execSync('git rev-parse HEAD', { cwd, encoding: 'utf-8' }).trim();
     return { head, timestamp: Date.now() };
-  } catch {
-    return null; // not a git repo
+  } catch (err) {
+    debugLog('git', `Not a git repo or no commits: ${err.message}`);
+    return null;
   }
 }
 
@@ -37,7 +39,7 @@ export function getChangedSince(snapshot, cwd) {
         `git diff --name-status ${snapshot.head} HEAD`,
         { cwd, encoding: 'utf-8' }
       ).trim();
-    } catch { /* no new commits */ }
+    } catch (err) { debugLog('git', `No new commits or diff failed: ${err.message}`); }
 
     // Also get uncommitted changes (staged + unstaged)
     const uncommitted = execSync(
@@ -101,7 +103,8 @@ export function getChangedSince(snapshot, cwd) {
       hasStructuralChange,
       statuses,
     };
-  } catch {
+  } catch (err) {
+    debugLog('git', `Failed to detect changes: ${err.message}`);
     return { files: [], dirs: new Set(), hasStructuralChange: false };
   }
 }

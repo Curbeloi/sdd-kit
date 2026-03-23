@@ -6,6 +6,8 @@
 import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
+import { debugLog } from './log.js';
+import { getConfig } from './config.js';
 
 // Extensions we consider source code
 const SOURCE_EXTS = new Set([
@@ -38,24 +40,24 @@ const SKIP_DIRS = new Set([
   '.git', 'specs',
 ]);
 
-const MAX_FILE_SIZE = 50 * 1024;
-
 /**
  * Scan a directory and return the full tree.
  */
 export function scanTree(rootPath) {
+  const config = getConfig(rootPath);
   const dirs = [];
   const files = [];
+  const skipped = [];
 
   if (fs.statSync(rootPath).isFile()) {
     const stat = fs.statSync(rootPath);
-    return { dirs: [], files: [{ rel: path.basename(rootPath), size: stat.size }] };
+    return { dirs: [], files: [{ rel: path.basename(rootPath), size: stat.size }], skipped: [] };
   }
 
   function walk(dirPath, depth = 0) {
-    if (depth > 8) return;
+    if (depth > config.maxDepth) return;
     let entries;
-    try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { return; }
+    try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch (err) { debugLog('scanner', `Cannot read directory: ${dirPath} — ${err.message}`); return; }
 
     const sorted = entries.sort((a, b) => {
       if (a.isDirectory() && !b.isDirectory()) return -1;
@@ -78,15 +80,19 @@ export function scanTree(rootPath) {
         if (SOURCE_EXTS.has(ext) || basename === 'dockerfile' || basename === 'makefile') {
           try {
             const stat = fs.statSync(fullPath);
-            if (stat.size <= MAX_FILE_SIZE) files.push({ rel: relPath, size: stat.size });
-          } catch { /* skip */ }
+            if (stat.size <= config.maxFileSize) {
+              files.push({ rel: relPath, size: stat.size });
+            } else {
+              skipped.push({ rel: relPath, size: stat.size, reason: 'size' });
+            }
+          } catch (err) { debugLog('scanner', `Cannot stat file: ${relPath} — ${err.message}`); }
         }
       }
     }
   }
 
   walk(rootPath);
-  return { dirs, files };
+  return { dirs, files, skipped };
 }
 
 /**
@@ -109,13 +115,17 @@ export function groupByDirectory(tree) {
 /**
  * Print the scan plan — directories and file counts.
  */
-export function printPlan(groups, totalFiles) {
+export function printPlan(groups, totalFiles, skipped = []) {
   console.log(chalk.bold('  Plan:'));
   console.log(chalk.dim(`  ${groups.length} groups, ${totalFiles} files\n`));
 
   for (const g of groups) {
     const label = g.dir === '.' ? chalk.dim('root files') : chalk.blue(g.dir + '/');
     console.log(`  ${label} ${chalk.dim(`${g.files.length} files`)}`);
+  }
+
+  if (skipped.length > 0) {
+    console.log(chalk.dim(`\n  ${skipped.length} file(s) skipped (exceed size limit)`));
   }
   console.log('');
 }
@@ -130,7 +140,7 @@ export function readGroupFiles(rootPath, group, onFile) {
     try {
       const content = fs.readFileSync(path.join(rootPath, file.rel), 'utf-8');
       results.push({ path: file.rel, content });
-    } catch { /* skip */ }
+    } catch (err) { debugLog('scanner', `Cannot read file: ${file.rel} — ${err.message}`); }
   }
   return results;
 }

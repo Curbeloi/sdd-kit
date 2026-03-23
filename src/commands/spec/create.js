@@ -54,12 +54,29 @@ export async function createCmd({ description, name, level = 3, cwd = process.cw
   }
 
   const specName = name || slugify(description);
+
+  if (!specName || specName === 'feat-') {
+    console.error(chalk.red('\n  Could not generate a valid spec name from the description.'));
+    console.log(chalk.dim('  Use --name to provide a name explicitly.\n'));
+    process.exit(1);
+  }
+
+  const specDir = path.join(cwd, 'specs', 'features', specName);
+
+  if (fs.existsSync(specDir)) {
+    const existing = fs.readdirSync(specDir).filter(f => f.endsWith('.md'));
+    if (existing.length > 0) {
+      console.error(chalk.yellow(`\n  Spec "${specName}" already exists with: ${existing.join(', ')}`));
+      console.log(chalk.dim('  Use a different --name or delete the existing spec.\n'));
+      process.exit(1);
+    }
+  }
+
   const files = LEVEL_FILES[level] || LEVEL_FILES[3];
 
   const levelLabel = { 1: chalk.red('-1 tasks'), 2: chalk.yellow('-2 req+tasks'), 3: chalk.green('-3 full') }[level];
   console.log(`\n${chalk.bold('sdd spec create')} — ${chalk.cyan(specName)} (${levelLabel})\n`);
 
-  const specDir = path.join(cwd, 'specs', 'features', specName);
   fs.mkdirSync(specDir, { recursive: true });
 
   const author = getGitAuthor();

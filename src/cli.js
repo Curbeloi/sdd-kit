@@ -11,7 +11,12 @@ import { documentCmd } from './commands/spec/document.js';
 import { statusCmd }   from './commands/spec/status.js';
 import { executeCmd }  from './commands/spec/execute.js';
 import { refreshCmd }  from './commands/spec/refresh.js';
+import { listCmd }     from './commands/spec/list.js';
+import { deleteCmd }   from './commands/spec/delete.js';
+import { renameCmd }   from './commands/spec/rename.js';
+import { archiveCmd }  from './commands/spec/archive.js';
 import { archCmd }     from './commands/arch.js';
+import { configCmd }   from './commands/config.js';
 
 // ─── Language detection ──────────────────────────────────────────────────────
 
@@ -111,7 +116,7 @@ const program = new Command();
 program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
-  .version('0.3.6')
+  .version('0.4.0')
   .configureHelp({
     visibleCommands(cmd) {
       const cmds = [];
@@ -230,6 +235,36 @@ ${chalk.bold(t.examples)}
     refreshCmd({ dir, promptOnly: opts.promptOnly || false });
   });
 
+spec
+  .command('list')
+  .description(isES ? 'Listar todos los specs' : 'List all specs')
+  .action(() => {
+    listCmd();
+  });
+
+spec
+  .command('delete <name>')
+  .description(isES ? 'Eliminar un spec' : 'Delete a spec')
+  .option('--force', isES ? 'Borrar sin confirmación' : 'Delete without confirmation')
+  .action((name, opts) => {
+    deleteCmd({ specName: name, force: opts.force || false });
+  });
+
+spec
+  .command('rename <old> <new>')
+  .description(isES ? 'Renombrar un spec' : 'Rename a spec')
+  .action((oldName, newName) => {
+    renameCmd({ oldName, newName });
+  });
+
+spec
+  .command('archive <name>')
+  .description(isES ? 'Archivar un spec completado' : 'Archive a completed spec')
+  .option('--restore', isES ? 'Restaurar spec archivado' : 'Restore archived spec')
+  .action((name, opts) => {
+    archiveCmd({ specName: name, restore: opts.restore || false });
+  });
+
 // ─── sdd arch ─────────────────────────────────────────────────────────────
 
 program
@@ -267,6 +302,15 @@ ${chalk.bold(t.examples)}
   `)
   .action((opts) => {
     import('./commands/init.js').then(m => m.initCmd({ auto: opts.auto || false }));
+  });
+
+// ─── sdd config ──────────────────────────────────────────────────────────
+
+program
+  .command('config')
+  .description(isES ? 'Mostrar configuración activa' : 'Show active configuration')
+  .action(() => {
+    configCmd();
   });
 
 program.parse();

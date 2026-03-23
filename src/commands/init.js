@@ -9,6 +9,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { readModuleSpecs, readAllSpecs } from '../core/spec-reader.js';
 import { askClaude, detectEngine, getEngineName } from '../core/claude-api.js';
+import { debugLog, warnLog } from '../core/log.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dirname, '../../templates/steering');
@@ -313,7 +314,8 @@ Return ONLY the markdown content for each file, no explanations.`;
         console.log(chalk.dim(`  Steering docs updated (.claude/steering/)${extra}`));
       }
     }
-  } catch {
-    // Non-critical — don't block the main operation
+  } catch (err) {
+    debugLog('steering', `Refresh failed: ${err.message}`);
+    if (!silent) warnLog(`Steering docs not updated: ${err.message}`);
   }
 }
