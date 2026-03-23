@@ -243,6 +243,51 @@ sdd spec refresh
 sdd spec refresh src/core
 ```
 
+### `sdd spec list`
+
+Lists all specs with a compact summary: files present, task progress, and date.
+
+```bash
+sdd spec list
+
+# Output:
+# feat-jwt-auth              RDT  done     2025-12-01
+# feat-rag-search            R-T  2/5      2025-12-15
+# feat-whatsapp-hooks        ---  empty    2026-01-10
+```
+
+### `sdd spec delete <name>`
+
+Deletes a spec directory after confirmation.
+
+```bash
+# With confirmation prompt
+sdd spec delete feat-old-feature
+
+# Skip confirmation
+sdd spec delete feat-old-feature --force
+```
+
+### `sdd spec rename <old> <new>`
+
+Renames a spec directory and updates internal Markdown headers.
+
+```bash
+sdd spec rename feat-old-name feat-new-name
+```
+
+### `sdd spec archive <name>`
+
+Moves a spec to `specs/archived/` to keep it out of `sdd spec status` and `sdd arch`. Use `--restore` to bring it back.
+
+```bash
+# Archive a completed spec
+sdd spec archive feat-jwt-auth
+
+# Restore it later
+sdd spec archive feat-jwt-auth --restore
+```
+
 ### `sdd arch`
 
 Generates architecture views from all specs, module docs, and steering docs. Produces:
@@ -261,6 +306,33 @@ sdd arch --prompt-only
 # Open the dashboard
 open specs/_arch/dashboard.html
 ```
+
+### `sdd config`
+
+Shows the active configuration, including values from `.sddrc` and defaults.
+
+```bash
+sdd config
+
+# Output:
+# specs_dir       specs/features       (default)
+# modules_dir     specs/_map           (default)
+# concurrency     4                    (default)
+# max_file_size   50KB                 (default)
+```
+
+You can customize sdd-kit by creating a `.sddrc` file (JSON) in your project root:
+
+```json
+{
+  "specs_dir": "docs/specs",
+  "concurrency": 2,
+  "max_file_size": 102400,
+  "max_depth": 10
+}
+```
+
+Available options: `specs_dir`, `modules_dir`, `steering_dir`, `arch_dir`, `concurrency`, `max_file_size`, `max_depth`.
 
 ## Built for Claude Code
 
@@ -324,6 +396,8 @@ sdd-kit/
 ├── src/
 │   ├── cli.js                  # Commander setup
 │   ├── core/
+│   │   ├── config.js           # .sddrc configuration system
+│   │   ├── log.js              # Debug logging (SDD_DEBUG=1)
 │   │   ├── generator.js        # Claude Code CLI invocation + prompt fallback
 │   │   ├── claude-api.js       # Claude API engine (alternative to CLI)
 │   │   ├── spec-reader.js      # Read/parse specs from disk
@@ -332,13 +406,18 @@ sdd-kit/
 │   │   └── progress.js         # Progress indicator for streaming
 │   └── commands/
 │       ├── init.js             # Init + CLAUDE.md integration + steering refresh
+│       ├── config.js           # Show active configuration
 │       ├── arch.js             # Architecture views + dashboard
 │       └── spec/
 │           ├── create.js       # Create feature specs
 │           ├── document.js     # Reverse-engineer code into specs
 │           ├── execute.js      # Execute tasks from specs
 │           ├── refresh.js      # Refresh map specs
-│           └── status.js       # Show progress
+│           ├── status.js       # Show progress
+│           ├── list.js         # List all specs
+│           ├── delete.js       # Delete a spec
+│           ├── rename.js       # Rename a spec
+│           └── archive.js      # Archive/restore specs
 ├── templates/
 │   ├── arch-dashboard.html     # HTML dashboard template
 │   └── steering/               # Init templates

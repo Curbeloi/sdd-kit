@@ -116,7 +116,7 @@ const program = new Command();
 program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
-  .version('0.4.0')
+  .version('0.4.1')
   .configureHelp({
     visibleCommands(cmd) {
       const cmds = [];
@@ -146,8 +146,10 @@ ${chalk.bold(t.quickStart)}
   ${chalk.cyan('sdd spec document')} src/auth/                    ${chalk.dim(`→ ${t.reverseEng}`)}
   ${chalk.cyan('sdd spec execute')} feat-jwt-auth                 ${chalk.dim(`→ ${t.executeSpec}`)}
   ${chalk.cyan('sdd spec status')}                                ${chalk.dim(`→ ${t.projectOverview}`)}
+  ${chalk.cyan('sdd spec list')}                                  ${chalk.dim(`→ ${isES ? 'listar todos los specs' : 'list all specs'}`)}
   ${chalk.cyan('sdd spec refresh')}                               ${chalk.dim(`→ ${t.refreshAll}`)}
   ${chalk.cyan('sdd arch')}                                       ${chalk.dim(`→ ${t.archDashboard}`)}
+  ${chalk.cyan('sdd config')}                                     ${chalk.dim(`→ ${isES ? 'ver configuración activa' : 'show active config'}`)}
 
 ${chalk.bold(t.specLevels)}
   ${chalk.red('-1')}   ${t.level1}

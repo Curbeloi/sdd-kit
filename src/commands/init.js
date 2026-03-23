@@ -192,10 +192,19 @@ This project uses [sdd-kit](https://github.com/Curbeloi/sdd-kit) for spec-driven
 - \`sdd spec refresh\` — Update project map specs (living documentation)
   - \`sdd spec refresh <dir>\` — Refresh a specific directory
 
+#### Spec lifecycle
+- \`sdd spec list\` — List all specs with progress summary
+- \`sdd spec delete <name>\` — Delete a spec (\`--force\` to skip confirmation)
+- \`sdd spec rename <old> <new>\` — Rename a spec and update headers
+- \`sdd spec archive <name>\` — Archive a spec (\`--restore\` to bring it back)
+
 #### Architecture
 - \`sdd arch\` — Generate architecture views and dashboard
   - \`-l, --level <level>\` system | services | modules
   - \`-f, --flow <feature>\` show flow diagram for a specific feature
+
+#### Configuration
+- \`sdd config\` — Show active configuration (defaults + .sddrc overrides)
 
 #### Setup
 - \`sdd init\` — Initialize sdd-kit in project (creates steering docs + CLAUDE.md)
