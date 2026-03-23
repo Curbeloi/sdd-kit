@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Verify CLI entry point
+        run: node bin/sdd.js --version
+
+  sdd-compliance:
+    name: SDD Spec Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for SDD spec in PR
+        run: |
+          # Get list of changed files in this PR
+          git fetch origin ${{ github.base_ref }} --depth=1
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          # Check if only docs/deps were changed (spec not required)
+          DOCS_ONLY=true
+          for file in $CHANGED_FILES; do
+            case "$file" in
+              *.md|package-lock.json|.github/*) ;;
+              *) DOCS_ONLY=false; break ;;
+            esac
+          done
+
+          if [ "$DOCS_ONLY" = true ]; then
+            echo "✅ Docs/config-only change — no SDD spec required."
+            exit 0
+          fi
+
+          # Check if a spec file exists in the PR
+          SPEC_FILES=$(echo "$CHANGED_FILES" | grep -E "^specs/" || true)
+
+          if [ -z "$SPEC_FILES" ]; then
+            echo "❌ SDD SPEC MISSING"
+            echo ""
+            echo "This PR modifies code but does not include an SDD spec."
+            echo "We use sdd-kit to build sdd-kit — no spec, no merge."
+            echo ""
+            echo "How to fix:"
+            echo "  1. Run: sdd spec create --size small|medium|large"
+            echo "  2. Fill out the generated spec"
+            echo "  3. Add it to the specs/ directory"
+            echo "  4. Push the updated branch"
+            echo ""
+            echo "See CONTRIBUTING.md for details."
+            exit 1
+          fi
+
+          echo "✅ SDD spec found: $SPEC_FILES"
