@@ -199,7 +199,7 @@ This project uses [sdd-kit](https://github.com/Curbeloi/sdd-kit). Specs drive co
 - \`sdd spec create "feature"\` — scaffold spec (default req + tasks; \`-3\` adds design)
 - \`sdd spec execute <name>\` — run next task via Claude Code
 - \`sdd spec status\` — progress overview
-- \`sdd spec refresh\` — update module map (skips unchanged; \`-f\` to force)
+- \`sdd spec refresh\` — update module map (skips unchanged; \`-f\` force, \`-d\` deep)
 - \`sdd arch\` — regenerate architecture views
 - \`sdd --help\` — full reference
 

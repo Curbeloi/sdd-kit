@@ -10,7 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
-import { scanTree, groupByDirectory, readGroupFiles, buildGroupPrompt } from '../../core/scanner.js';
+import { scanTree, groupByDirectory, readGroupFiles, buildGroupPrompt, buildGroupPromptSymbols } from '../../core/scanner.js';
 import { askClaude, getEngineName, batchAsk } from '../../core/claude-api.js';
 import { loadCache, saveCache, computeGroupHash } from '../../core/hash-cache.js';
 import { parseFrontmatter, stringifyFrontmatter } from '../../core/spec-reader.js';
@@ -39,11 +39,20 @@ function writeSpecWithFrontmatter(specPath, body, groupHash) {
   fs.writeFileSync(specPath, stringifyFrontmatter(fm, body), 'utf-8');
 }
 
+function buildPromptForGroup(label, fileContents, deep) {
+  return deep
+    ? buildGroupPrompt(label, fileContents)
+    : buildGroupPromptSymbols(label, fileContents);
+}
+
 /**
  * Refresh a single module spec. Used by execute.js post-task and by CLI command.
  * Returns { skipped: boolean, specPath?: string }.
+ *
+ * `deep=false` (default) sends per-file symbol summaries — cheap.
+ * `deep=true` sends truncated file contents — the old behavior, higher fidelity.
  */
-export async function refreshModule({ dir, cwd, maxTokens = 1000, force = false }) {
+export async function refreshModule({ dir, cwd, maxTokens = 1000, force = false, deep = false }) {
   const resolvedDir = path.resolve(cwd, dir);
   if (!fs.existsSync(resolvedDir) || !fs.statSync(resolvedDir).isDirectory()) {
     return { skipped: true };
@@ -74,7 +83,7 @@ export async function refreshModule({ dir, cwd, maxTokens = 1000, force = false 
     allFiles.push(...readGroupFiles(resolvedDir, group));
   }
 
-  const prompt = buildGroupPrompt(label, allFiles);
+  const prompt = buildPromptForGroup(label, allFiles, deep);
   const analysis = await askClaude(prompt, { maxTokens, cwd });
 
   writeSpecWithFrontmatter(specPath, analysis, groupHash);
@@ -85,10 +94,11 @@ export async function refreshModule({ dir, cwd, maxTokens = 1000, force = false 
 /**
  * CLI command: sdd spec refresh [dir]
  */
-export async function refreshCmd({ dir, promptOnly, verbose = false, force = false, cwd = process.cwd() }) {
+export async function refreshCmd({ dir, promptOnly, verbose = false, force = false, deep = false, cwd = process.cwd() }) {
   const maxTokens = verbose ? 2000 : 1000;
+  const modeLabel = deep ? 'deep' : 'symbols';
   console.log(`\n${chalk.bold('sdd spec refresh')} — ${chalk.cyan('update module specs')}`);
-  console.log(chalk.dim(`  Engine: ${getEngineName()}  |  max_tokens: ${maxTokens}${verbose ? ' (verbose)' : ''}${force ? '  |  force: on' : ''}\n`));
+  console.log(chalk.dim(`  Engine: ${getEngineName()}  |  max_tokens: ${maxTokens}${verbose ? ' (verbose)' : ''}  |  mode: ${modeLabel}${force ? '  |  force: on' : ''}\n`));
 
   if (promptOnly) {
     console.log(chalk.yellow('  Module refresh requires an engine (API key or Claude Code CLI).\n'));
@@ -98,7 +108,7 @@ export async function refreshCmd({ dir, promptOnly, verbose = false, force = fal
   if (dir) {
     const spinner = ora(`Refreshing module spec: ${dir}`).start();
     try {
-      const result = await refreshModule({ dir, cwd, maxTokens, force });
+      const result = await refreshModule({ dir, cwd, maxTokens, force, deep });
       if (result.skipped) {
         spinner.info(chalk.dim(`Module spec unchanged: ${dir} (skipped)`));
       } else {
@@ -140,7 +150,7 @@ export async function refreshCmd({ dir, promptOnly, verbose = false, force = fal
     }
 
     const fileContents = readGroupFiles(cwd, group);
-    const prompt = buildGroupPrompt(label, fileContents);
+    const prompt = buildPromptForGroup(label, fileContents, deep);
     pending.push({ prompt, label, specPath, groupHash });
   }
 

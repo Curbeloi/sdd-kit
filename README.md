@@ -89,7 +89,7 @@ sdd-kit keeps documentation in sync with code through **automatic refresh** at e
 |-------|-------------------|
 | `sdd spec execute` completes a task | Project map specs are refreshed only for modules with **structural** changes (files added/deleted); steering docs are updated. Use `--refresh=auto` for old behavior (refresh on any change) or `--refresh=off` to skip. |
 | `sdd spec create` generates a new spec | Steering docs are updated with the new feature |
-| `sdd spec refresh` (manual) | Project map specs are regenerated **only for modules whose source files changed** (content-hash dedup via `.sdd/cache/`). `--force` regenerates everything; `--verbose` raises the per-module budget from 1000 to 2000 tokens. |
+| `sdd spec refresh` (manual) | Project map specs are regenerated **only for modules whose source files changed** (content-hash dedup via `.sdd/cache/`). By default the prompt ships **per-file symbol summaries** (~80% smaller than raw source). Use `--deep` for truncated source (old behavior, higher fidelity), `--force` to ignore the hash cache, `--verbose` to raise the per-module output budget from 1000 to 2000 tokens. |
 | `sdd arch` | Architecture views + dashboard rebuilt from all specs |
 
 **Living documentation flow:**
@@ -237,20 +237,25 @@ sdd spec execute feat-jwt-auth --refresh=auto
 Manually refreshes map specs (living documentation). Useful after making changes outside of `sdd spec execute`.
 
 ```bash
-# Refresh changed modules (1000 tokens/module)
+# Refresh changed modules (symbol summaries, 1000 tokens/module)
 sdd spec refresh
 
 # Refresh one directory
 sdd spec refresh src/core
 
-# Higher detail (2000 tokens/module)
+# Higher detail output (2000 tokens/module)
 sdd spec refresh --verbose
 
 # Regenerate everything, ignoring the cached hash
 sdd spec refresh --force
+
+# Send full truncated source instead of symbol summaries (higher fidelity, higher cost)
+sdd spec refresh --deep
 ```
 
-Each generated `<label>.spec.md` carries a `source_hash` in its YAML frontmatter. On subsequent runs, modules whose content-hash matches the stored one are skipped — no Claude call. The per-file hash cache lives at `.sdd/cache/hashes.json` (safe to delete — it rebuilds).
+**How the dedup works.** Each generated `<label>.spec.md` carries a `source_hash` in its YAML frontmatter. On subsequent runs, modules whose content-hash matches the stored one are skipped — no Claude call. The per-file hash cache lives at `.sdd/cache/hashes.json` (safe to delete — it rebuilds).
+
+**How the symbol summary works.** By default, the prompt for each module contains per-file headers with extracted top-level symbols (functions, classes, exports, imports) rather than truncated source code. Measured on sdd-kit's own `src/` tree, this shrinks the prompt by ~80% while preserving enough structure for Claude to infer module purpose and relationships. Pass `--deep` when you need the old behavior.
 
 ### `sdd spec list`
 

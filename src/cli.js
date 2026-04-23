@@ -44,6 +44,7 @@ const t = isES ? {
   refreshOptPrompt: 'No ejecutar (requiere engine)',
   refreshOptVerbose: 'Specs más detallados (presupuesto de tokens mayor)',
   refreshOptForce: 'Regenerar todos los specs ignorando el hash cacheado',
+  refreshOptDeep: 'Enviar contenido completo truncado en vez de resumen de símbolos (más caro, mayor fidelidad)',
   archDesc: 'Generar vistas de arquitectura desde todos los specs',
   archOptLevel: 'Nivel: system | services | modules',
   archOptFlow: 'Diagrama de flujo para un feature específico',
@@ -90,6 +91,7 @@ const t = isES ? {
   refreshOptPrompt: 'Skip execution (requires engine)',
   refreshOptVerbose: 'More detailed specs (higher token budget)',
   refreshOptForce: 'Regenerate every spec ignoring the cached hash',
+  refreshOptDeep: 'Send full truncated file contents instead of symbol summaries (costlier, higher fidelity)',
   archDesc: 'Generate architecture views from all specs',
   archOptLevel: 'View level: system | services | modules',
   archOptFlow: 'Show flow diagram for a specific feature',
@@ -239,12 +241,14 @@ spec
   .option('-p, --prompt-only', t.refreshOptPrompt)
   .option('-v, --verbose', t.refreshOptVerbose)
   .option('-f, --force', t.refreshOptForce)
+  .option('-d, --deep', t.refreshOptDeep)
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec refresh                ${chalk.dim(`→ ${t.refreshAll}`)}
   sdd spec refresh src/core       ${chalk.dim(`→ ${t.refreshOne}`)}
   sdd spec refresh --verbose      ${chalk.dim('→ higher token budget (2000 vs 1000)')}
   sdd spec refresh --force        ${chalk.dim('→ regenerate everything (ignore cached hash)')}
+  sdd spec refresh --deep         ${chalk.dim('→ send full contents instead of symbol summaries')}
   `)
   .action((dir, opts) => {
     refreshCmd({
@@ -252,6 +256,7 @@ ${chalk.bold(t.examples)}
       promptOnly: opts.promptOnly || false,
       verbose: opts.verbose || false,
       force: opts.force || false,
+      deep: opts.deep || false,
     });
   });
 

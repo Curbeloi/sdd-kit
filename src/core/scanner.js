@@ -145,6 +145,135 @@ export function readGroupFiles(rootPath, group, onFile) {
   return results;
 }
 
+// ─── Symbol extraction (T3 — cheap per-file summaries for refresh prompts) ──
+
+const CODE_EXTS = new Set([
+  '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+  '.py', '.rb', '.php', '.java', '.go', '.rs', '.c', '.cpp', '.h',
+  '.cs', '.swift', '.kt', '.scala', '.ex', '.exs', '.dart',
+  '.vue', '.svelte', '.astro',
+]);
+
+// Keywords that mark "top-level symbols" across common languages.
+// A line is kept iff its first non-whitespace token matches one of these,
+// it starts at column 0 (strictly top-level), and it isn't a comment.
+//
+// Deliberately excludes `const|let|var` at the top-level — public declarations
+// are captured via their `export` prefix instead; unexported module-level vars
+// are usually internals and add noise.
+const SIGNATURE_FIRST_TOKENS = new Set([
+  // JS / TS
+  'export', 'import', 'function', 'class', 'interface', 'type', 'enum',
+  'async', 'abstract', 'declare', 'namespace',
+  // Python
+  'def', 'from',
+  // Go
+  'func', 'package',
+  // Rust / C-family
+  'pub', 'fn', 'struct', 'trait', 'impl', 'mod', 'use',
+  // Ruby / Elixir
+  'module', 'defmodule', 'defstruct', 'defp',
+  // Generic
+  'require',
+]);
+
+const COMMENT_LINE_RE = /^\s*(?:\/\/|\/\*|\*|#!|#(?!\[)|--|;)/;
+
+/**
+ * Extract top-level "signature-ish" lines from a source file.
+ * Heuristic, regex-based, intentionally cheap. Returns up to `maxLines` trimmed lines.
+ */
+export function extractSymbols(content, { maxLines = 60, maxLineLength = 140 } = {}) {
+  if (typeof content !== 'string' || !content) return [];
+  const out = [];
+  for (const raw of content.split(/\r?\n/)) {
+    if (out.length >= maxLines) break;
+    const line = raw;
+    if (!line.trim()) continue;
+    if (COMMENT_LINE_RE.test(line)) continue;
+
+    const leading = line.match(/^\s*/)[0].length;
+    if (leading > 0) continue; // top-level only
+
+    const firstToken = line.trim().split(/[\s(<[{=]/)[0];
+    if (!firstToken || !SIGNATURE_FIRST_TOKENS.has(firstToken)) continue;
+
+    let clean = line.trim();
+    // Drop trailing block-open noise — `{`, `=>`, `:` at EOL — to keep summaries compact.
+    clean = clean.replace(/\s*[{][^}]*$/, '').replace(/\s*=>\s*$/, '');
+    if (clean.length > maxLineLength) clean = clean.slice(0, maxLineLength - 3) + '...';
+    out.push(clean);
+  }
+  return out;
+}
+
+/**
+ * Produce a compact summary for a single file: either extracted symbols (for code)
+ * or a small head-sample (for configs/docs).
+ * Returns { type: 'symbols'|'head', items?: string[], text?: string }.
+ */
+export function extractFileSummary(filePath, content, opts = {}) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (CODE_EXTS.has(ext)) {
+    return { type: 'symbols', items: extractSymbols(content, opts) };
+  }
+  return { type: 'head', text: (content || '').slice(0, opts.maxHeadBytes || 400) };
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes}B`;
+  return `${(bytes / 1024).toFixed(1)}KB`;
+}
+
+/**
+ * Prompt builder that sends per-file symbol summaries instead of truncated contents.
+ * ~70-80% smaller than `buildGroupPrompt` for typical source directories.
+ */
+export function buildGroupPromptSymbols(dirName, files) {
+  const blocks = files.map(f => {
+    const summary = f.summary || extractFileSummary(f.path, f.content);
+    const header = `### ${f.path}  (${formatSize(f.size ?? (f.content ? f.content.length : 0))})`;
+    if (summary.type === 'symbols') {
+      if (summary.items.length === 0) {
+        return `${header}\n_no top-level symbols detected_`;
+      }
+      return `${header}\n${summary.items.map(s => '- ' + s).join('\n')}`;
+    }
+    return `${header}\n\`\`\`\n${summary.text}\n\`\`\``;
+  }).join('\n\n');
+
+  return `Analyze this directory and write a concise spec based on the file summaries below.
+File contents are summarized as top-level symbols (functions, classes, exports, imports) — not full source.
+Infer purpose and relationships from the symbol names and paths; do not request the full source.
+
+## Directory: ${dirName}
+## Files: ${files.length}
+
+${blocks}
+
+---
+
+Write your analysis in this exact format (plain text, no file creation needed):
+
+# ${dirName}
+
+## Purpose
+One paragraph: what this directory/module does.
+
+## Key Components
+- ComponentName — what it does
+
+## Exports / Public Interface
+Key functions, classes, or endpoints exposed.
+
+## Dependencies
+What it imports or depends on.
+
+## Notes
+Important patterns or decisions.
+`;
+}
+
 /**
  * Build prompt for analyzing a single directory group.
  */
