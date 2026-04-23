@@ -39,14 +39,14 @@ This project follows our [Code of Conduct](CODE_OF_CONDUCT.md). By participating
 Before writing a single line of code, create your specification:
 
 ```bash
-# For small changes (bug fixes, minor tweaks)
-sdd spec create --size small
+# For small changes (bug fixes, minor tweaks) — tasks.md only
+sdd spec create "describe the change" -1
 
-# For medium changes (new flags, refactors)
-sdd spec create --size medium
+# For medium changes (new flags, refactors) — default, requirements + tasks
+sdd spec create "describe the change"
 
-# For large changes (new commands, architectural changes)
-sdd spec create --size large
+# For large changes (new commands, architectural changes) — full spec w/ design
+sdd spec create "describe the change" -3
 ```
 
 ### Step 2: Fill Out the Spec
@@ -75,23 +75,26 @@ Now you can code. Your implementation should follow the spec — not the other w
 
 ### Step 5: Include Specs in Your PR
 
-Your PR **must include** the spec files in a `specs/` directory at the root of the project. This serves as living documentation of every design decision.
+Your PR **must include** the spec files at `specs/features/<spec-name>/`. This serves as living documentation of every design decision.
 
 ```
-specs/
-├── feat-output-flag.spec.md      # Example: new --output flag
-├── fix-empty-dir-handling.spec.md # Example: bug fix
+specs/features/
+├── feat-output-flag/
+│   ├── requirements.md
+│   └── tasks.md
+├── fix-empty-dir-handling/
+│   └── tasks.md
 └── ...
 ```
 
 ### What Requires a Spec?
 
-| Change Type | Spec Required? | Recommended Size |
+| Change Type | Spec Required? | Recommended Flag |
 |---|---|---|
-| New command | ✅ Yes | `--size large` |
-| New flag/option | ✅ Yes | `--size medium` |
-| Bug fix | ✅ Yes | `--size small` |
-| Refactor | ✅ Yes | `--size medium` |
+| New command | ✅ Yes | `-3` (full spec) |
+| New flag/option | ✅ Yes | default (`-2`, req + tasks) |
+| Bug fix | ✅ Yes | `-1` (tasks only) |
+| Refactor | ✅ Yes | default (`-2`, req + tasks) |
 | Typo/formatting | ❌ No | — |
 | Documentation only | ❌ No | — |
 | Dependency update | ❌ No | — |
@@ -103,13 +106,13 @@ specs/
 3. **Documentation** — Every decision is recorded, not lost in Slack
 4. **Proof** — It demonstrates that SDD works in practice, on a real project
 
-> 💡 **Pro tip**: If writing the spec feels like overkill for your change, your change might be smaller than you think — use `--size small`. If it feels impossible to spec, your change might be too big — break it down.
+> 💡 **Pro tip**: If writing the spec feels like overkill for your change, your change might be smaller than you think — use `-1`. If it feels impossible to spec, your change might be too big — break it down.
 
 ## Getting Started
 
 Before contributing, make sure you understand what sdd-kit does:
 
-- **`sdd spec create`** — Generates SDD specification files with `--size` flag (small/medium/large)
+- **`sdd spec create`** — Generates SDD specification files; size controlled by `-1` / `-2` (default) / `-3`
 - **`sdd arch`** — Generates Mermaid architecture diagrams and an interactive HTML dashboard
 - It's **language-agnostic** — works with any project, any stack
 
@@ -174,14 +177,14 @@ sdd-kit/
 
 1. Check [existing issues](https://github.com/Curbeloi/sdd-kit/issues) to avoid duplicates
 2. Open an issue describing the bug (if one doesn't exist)
-3. **Run `sdd spec create --size small`** and fill out the spec
+3. **Run `sdd spec create "describe fix" -1`** and fill out the spec
 4. Fork → Branch → Fix → Test → PR (include spec)
 
 ### ✨ Add a Feature
 
 1. **Open an issue first** to discuss the feature before writing code
 2. Wait for approval from maintainers — this saves everyone time
-3. **Run `sdd spec create --size medium|large`** and fill out the spec
+3. **Run `sdd spec create "describe feature"`** (default) or `-3` for complex/architectural changes
 4. **Run `sdd arch`** to validate your feature fits the architecture
 5. Fork → Branch → Implement → Test → PR (include spec + architecture output)
 
@@ -197,7 +200,9 @@ We welcome translations of docs and CLI messages. Open an issue to coordinate.
 
 1. **Generate your spec** (see [SDD-First Workflow](#the-sdd-first-workflow-mandatory)):
    ```bash
-   sdd spec create --size small|medium|large
+   sdd spec create "describe the change"      # default: -2 (req + tasks)
+   sdd spec create "describe the change" -1   # tasks only
+   sdd spec create "describe the change" -3   # full spec with design
    ```
 
 2. **Create a branch** from `main`:
@@ -230,7 +235,7 @@ We welcome translations of docs and CLI messages. Open an issue to coordinate.
 
 ### PR Requirements
 
-- [ ] **SDD spec included** in `specs/` directory (unless docs/deps-only change)
+- [ ] **SDD spec included** at `specs/features/<spec-name>/` (unless docs/deps-only change)
 - [ ] Spec was generated using `sdd spec create` (not written manually)
 - [ ] Implementation matches the spec
 - [ ] All existing tests pass
