@@ -89,7 +89,7 @@ sdd-kit keeps documentation in sync with code through **automatic refresh** at e
 |-------|-------------------|
 | `sdd spec execute` completes a task | Project map specs are refreshed only for modules with **structural** changes (files added/deleted); steering docs are updated. Use `--refresh=auto` for old behavior (refresh on any change) or `--refresh=off` to skip. |
 | `sdd spec create` generates a new spec | Steering docs are updated with the new feature |
-| `sdd spec refresh` (manual) | All project map specs are regenerated from current code (capped at 1000 tokens per module; `--verbose` raises to 2000) |
+| `sdd spec refresh` (manual) | Project map specs are regenerated **only for modules whose source files changed** (content-hash dedup via `.sdd/cache/`). `--force` regenerates everything; `--verbose` raises the per-module budget from 1000 to 2000 tokens. |
 | `sdd arch` | Architecture views + dashboard rebuilt from all specs |
 
 **Living documentation flow:**
@@ -237,7 +237,7 @@ sdd spec execute feat-jwt-auth --refresh=auto
 Manually refreshes map specs (living documentation). Useful after making changes outside of `sdd spec execute`.
 
 ```bash
-# Refresh all map specs (1000 tokens/module)
+# Refresh changed modules (1000 tokens/module)
 sdd spec refresh
 
 # Refresh one directory
@@ -245,7 +245,12 @@ sdd spec refresh src/core
 
 # Higher detail (2000 tokens/module)
 sdd spec refresh --verbose
+
+# Regenerate everything, ignoring the cached hash
+sdd spec refresh --force
 ```
+
+Each generated `<label>.spec.md` carries a `source_hash` in its YAML frontmatter. On subsequent runs, modules whose content-hash matches the stored one are skipped — no Claude call. The per-file hash cache lives at `.sdd/cache/hashes.json` (safe to delete — it rebuilds).
 
 ### `sdd spec list`
 

@@ -32,7 +32,29 @@ export async function initCmd({ auto = false, cwd = process.cwd() } = {}) {
   // Ensure CLAUDE.md references the SDD documentation
   ensureClaudeMd(cwd);
 
+  // Add .sdd/ to .gitignore so the hash cache doesn't get committed
+  ensureGitignore(cwd);
+
   console.log('');
+}
+
+function ensureGitignore(cwd) {
+  const gitignorePath = path.join(cwd, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) return;
+
+  const content = fs.readFileSync(gitignorePath, 'utf-8');
+  const already = content.split(/\r?\n/).some(line => {
+    const s = line.trim();
+    return s === '.sdd/' || s === '.sdd' || s === '.sdd/*';
+  });
+  if (already) return;
+
+  fs.writeFileSync(
+    gitignorePath,
+    content.trimEnd() + '\n\n# sdd-kit cache\n.sdd/\n',
+    'utf-8',
+  );
+  console.log(chalk.dim('  updated  .gitignore (added .sdd/)'));
 }
 
 function scaffoldTemplates(steeringDir) {
@@ -191,8 +213,10 @@ This project uses [sdd-kit](https://github.com/Curbeloi/sdd-kit) for spec-driven
 - \`sdd spec status\` — Show project progress across all specs
   - \`sdd spec status <spec-name> --verbose\` — Show individual task details
 - \`sdd spec refresh\` — Update project map specs (living documentation)
+  - Modules with unchanged content are skipped automatically (content-hash dedup)
   - \`sdd spec refresh <dir>\` — Refresh a specific directory
   - \`-v, --verbose\` more detailed specs (2× token budget)
+  - \`-f, --force\` regenerate every spec, ignoring the cached hash
 
 #### Spec lifecycle
 - \`sdd spec list\` — List all specs with progress summary

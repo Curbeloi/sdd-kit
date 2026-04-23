@@ -37,8 +37,10 @@ This project uses [sdd-kit](https://github.com/Curbeloi/sdd-kit) for spec-driven
 - `sdd spec status` — Show project progress across all specs
   - `sdd spec status <spec-name> --verbose` — Show individual task details
 - `sdd spec refresh` — Update project map specs (living documentation)
+  - Modules with unchanged content are skipped automatically (content-hash dedup)
   - `sdd spec refresh <dir>` — Refresh a specific directory
   - `-v, --verbose` more detailed specs (2× token budget)
+  - `-f, --force` regenerate every spec, ignoring the cached hash
 
 #### Architecture
 - `sdd arch` — Generate architecture views and dashboard
