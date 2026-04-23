@@ -13,7 +13,7 @@ import { refreshModule } from './refresh.js';
 import { refreshSteering } from '../init.js';
 import { snapshotBefore, getChangedSince, getAffectedModuleDirs } from '../../core/git-changes.js';
 
-export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = process.cwd() }) {
+export async function executeCmd({ specName, taskId, dryRun, promptOnly, refreshMode = 'structural', cwd = process.cwd() }) {
   const spec = readSpec(cwd, specName);
   if (!spec) {
     console.error(chalk.red(`\n  Spec not found: ${specName}`));
@@ -77,14 +77,20 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = p
       // Post-task: detect what actually changed via git diff
       const changes = getChangedSince(snapshot, cwd);
 
-      if (changes.files.length > 0) {
+      if (refreshMode === 'off') {
+        console.log(chalk.dim(`\n  Skipped auto-refresh (--refresh=off).`));
+      } else if (changes.files.length > 0) {
         const affectedDirs = getAffectedModuleDirs(changes.files);
         // Filter to dirs that aren't specs/node_modules/etc.
         const moduleDirs = affectedDirs.filter(d =>
           d !== '.' && !d.startsWith('specs') && !d.startsWith('node_modules') && !d.startsWith('.claude')
         );
 
-        if (moduleDirs.length > 0) {
+        const shouldRefreshModules =
+          refreshMode === 'auto' ||
+          (refreshMode === 'structural' && changes.hasStructuralChange);
+
+        if (moduleDirs.length > 0 && shouldRefreshModules) {
           console.log(chalk.dim(`\n  Detected changes in ${changes.files.length} file(s) across ${moduleDirs.length} module(s)`));
 
           for (const dir of moduleDirs) {
@@ -96,6 +102,8 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, cwd = p
               refreshSpinner.info(chalk.dim(`  Module spec not updated: ${dir} (run sdd spec refresh)`));
             }
           }
+        } else if (moduleDirs.length > 0) {
+          console.log(chalk.dim(`\n  ${moduleDirs.length} module(s) changed but no structural changes detected — skipping auto-refresh. Use --refresh=auto or run \`sdd spec refresh\` to force.`));
         }
 
         // Auto-refresh steering docs — flag structural changes

@@ -54,7 +54,7 @@ sdd arch
 sdd init --auto
 
 # 4. Now create specs for new features
-sdd spec create "Add real-time notifications" --size medium
+sdd spec create "Add real-time notifications"
 ```
 
 ### New project (starting from scratch)
@@ -69,7 +69,7 @@ sdd init
 #    .claude/steering/structure.md - how code is organized
 
 # 3. Create your first spec
-sdd spec create "JWT authentication for API endpoints" --size medium
+sdd spec create "JWT authentication for API endpoints"
 
 # 4. Execute tasks from the spec
 sdd spec execute feat-jwt-authentication
@@ -87,9 +87,9 @@ sdd-kit keeps documentation in sync with code through **automatic refresh** at e
 
 | Event | What gets updated |
 |-------|-------------------|
-| `sdd spec execute` completes a task | Project map specs for ALL changed directories are refreshed (via git diff), steering docs are updated |
+| `sdd spec execute` completes a task | Project map specs are refreshed only for modules with **structural** changes (files added/deleted); steering docs are updated. Use `--refresh=auto` for old behavior (refresh on any change) or `--refresh=off` to skip. |
 | `sdd spec create` generates a new spec | Steering docs are updated with the new feature |
-| `sdd spec refresh` (manual) | All project map specs are regenerated from current code |
+| `sdd spec refresh` (manual) | All project map specs are regenerated from current code (capped at 1000 tokens per module; `--verbose` raises to 2000) |
 | `sdd arch` | Architecture views + dashboard rebuilt from all specs |
 
 **Living documentation flow:**
@@ -166,32 +166,27 @@ Output goes to `specs/_map/`. These specs are used as context for `sdd arch`, `s
 
 ### `sdd spec create <description>`
 
-Generates spec files from a feature description. The CLI adapts to the size of the change:
+Generates spec files from a feature description. The CLI adapts to the size of the change via numeric flags:
 
-| Size | Files generated | When to use |
+| Flag | Files generated | When to use |
 |------|----------------|-------------|
-| `small` | `tasks.md` only | Bug fixes, tweaks, refactors |
-| `medium` | `requirements.md` + `tasks.md` | Clear features (1-3 days) |
-| `large` | `requirements.md` + `design.md` + `tasks.md` | Complex features, new architecture |
+| `-1` | `tasks.md` only | Bug fixes, tweaks, refactors |
+| `-2` *(default)* | `requirements.md` + `tasks.md` | Clear features (1-3 days) |
+| `-3` | `requirements.md` + `design.md` + `tasks.md` | Complex features, new architecture |
 
 ```bash
 # Bug fix — just tasks, no ceremony
-sdd spec create "Fix 422 error on login endpoint" --size small
+sdd spec create "Fix 422 error on login endpoint" -1
 
-# Medium feature — requirements + tasks
-sdd spec create "Add JWT refresh tokens" --size medium
+# Default — requirements + tasks
+sdd spec create "Add JWT refresh tokens"
 
-# Complex feature — full spec with design doc (default)
-sdd spec create "Hybrid RAG search pipeline"
+# Complex feature — full spec with design doc
+sdd spec create "Hybrid RAG search pipeline" -3
 
 # Custom name
-sdd spec create "WhatsApp webhook integration" --name whatsapp-hooks
-
-# Without Claude Code — saves a prompt file
-sdd spec create "User dashboard" --prompt-only
+sdd spec create "WhatsApp webhook integration" --name feat-whatsapp-hooks
 ```
-
-The CLI detects bug-fix keywords (`fix`, `bug`, `crash`, `patch`) and suggests using `--size small` when you use `large` for what looks like a small change.
 
 ### `sdd spec status [spec-name]`
 
@@ -218,7 +213,7 @@ Indicators: **R** = requirements.md, **D** = design.md, **T** = tasks.md (green 
 
 ### `sdd spec execute <spec-name>`
 
-Executes the next pending task via Claude Code. Sends the task description along with requirements, design, and module context so Claude has full understanding. After execution, automatically refreshes map specs for changed directories.
+Executes the next pending task via Claude Code. Sends the task description along with requirements, design, and module context so Claude has full understanding. After execution, refreshes map specs only for modules with **structural** changes (files added/deleted) — tunable via `--refresh`.
 
 ```bash
 # Next pending task
@@ -229,6 +224,12 @@ sdd spec execute feat-jwt-auth --task 1.2
 
 # Preview without executing
 sdd spec execute feat-rag-search --dry-run
+
+# Skip all auto-refresh (module + steering)
+sdd spec execute feat-jwt-auth --refresh=off
+
+# Old behavior — refresh on any changed file
+sdd spec execute feat-jwt-auth --refresh=auto
 ```
 
 ### `sdd spec refresh [dir]`
@@ -236,11 +237,14 @@ sdd spec execute feat-rag-search --dry-run
 Manually refreshes map specs (living documentation). Useful after making changes outside of `sdd spec execute`.
 
 ```bash
-# Refresh all map specs
+# Refresh all map specs (1000 tokens/module)
 sdd spec refresh
 
 # Refresh one directory
 sdd spec refresh src/core
+
+# Higher detail (2000 tokens/module)
+sdd spec refresh --verbose
 ```
 
 ### `sdd spec list`
@@ -372,11 +376,11 @@ Each task has: checkbox, numbered ID, description, optional file path, optional 
 > "Using a full SDD workflow for a bug fix is like using a sledgehammer to crack a nut."
 > — Birgitta Boeckeler, Thoughtworks ([Martin Fowler's blog](https://martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html))
 
-Not every change needs three documents. A typo fix doesn't need acceptance criteria. A one-line bug fix doesn't need an architecture diagram. The `--size` flag adapts the ceremony to the change:
+Not every change needs three documents. A typo fix doesn't need acceptance criteria. A one-line bug fix doesn't need an architecture diagram. The numeric size flag adapts the ceremony to the change:
 
-- **small**: You know exactly what to do. Just need to track the tasks.
-- **medium**: Requirements are clear, but you want documented acceptance criteria before implementation.
-- **large**: The problem space is complex. You need to think through architecture, data models, and API contracts before writing code.
+- **`-1` small**: You know exactly what to do. Just need to track the tasks.
+- **`-2` medium** *(default)*: Requirements are clear, but you want documented acceptance criteria before implementation.
+- **`-3` large**: The problem space is complex. You need to think through architecture, data models, and API contracts before writing code.
 
 ## Works with any project
 

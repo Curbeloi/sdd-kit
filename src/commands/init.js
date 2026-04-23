@@ -170,8 +170,8 @@ This project uses [sdd-kit](https://github.com/Curbeloi/sdd-kit) for spec-driven
 #### Spec creation
 - \`sdd spec create "feature"\` — Scaffold spec files (empty with header)
   - \`-1\` tasks.md only (bug fixes, tweaks)
-  - \`-2\` requirements.md + tasks.md (clear features, 1-3 days)
-  - \`-3\` full spec: requirements + design + tasks (default)
+  - \`-2\` requirements.md + tasks.md (default, 1-3 days)
+  - \`-3\` full spec: requirements + design + tasks (complex features)
   - \`-n, --name <name>\` custom spec name
 - \`sdd spec create --name feat-my-feature\` — Create without description
 
@@ -180,6 +180,7 @@ This project uses [sdd-kit](https://github.com/Curbeloi/sdd-kit) for spec-driven
   - \`-t, --task <id>\` execute a specific task (e.g. \`--task 1.2\`)
   - \`--dry-run\` preview what would be done without executing
   - \`-p, --prompt-only\` generate prompt without executing
+  - \`--refresh <mode>\` module refresh after task: \`auto\` | \`structural\` (default) | \`off\`
 
 #### Code documentation
 - \`sdd spec document <path>\` — Reverse engineer existing code into a spec
@@ -191,6 +192,7 @@ This project uses [sdd-kit](https://github.com/Curbeloi/sdd-kit) for spec-driven
   - \`sdd spec status <spec-name> --verbose\` — Show individual task details
 - \`sdd spec refresh\` — Update project map specs (living documentation)
   - \`sdd spec refresh <dir>\` — Refresh a specific directory
+  - \`-v, --verbose\` more detailed specs (2× token budget)
 
 #### Spec lifecycle
 - \`sdd spec list\` — List all specs with progress summary

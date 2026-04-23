@@ -45,7 +45,7 @@ function buildHeader(fileName, specName, { description, author, date }) {
   return lines.join('\n');
 }
 
-export async function createCmd({ description, name, level = 3, cwd = process.cwd() }) {
+export async function createCmd({ description, name, level = 2, cwd = process.cwd() }) {
   if (!description && !name) {
     console.error(chalk.red('\n  Provide a description or --name to create a spec.\n'));
     console.log(chalk.dim('  sdd spec create "JWT authentication"'));
@@ -72,7 +72,7 @@ export async function createCmd({ description, name, level = 3, cwd = process.cw
     }
   }
 
-  const files = LEVEL_FILES[level] || LEVEL_FILES[3];
+  const files = LEVEL_FILES[level] || LEVEL_FILES[2];
 
   const levelLabel = { 1: chalk.red('-1 tasks'), 2: chalk.yellow('-2 req+tasks'), 3: chalk.green('-3 full') }[level];
   console.log(`\n${chalk.bold('sdd spec create')} — ${chalk.cyan(specName)} (${levelLabel})\n`);

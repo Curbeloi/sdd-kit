@@ -4,7 +4,7 @@
  * Language-agnostic — works with any project.
  */
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import chalk from 'chalk';
 import { createCmd }   from './commands/spec/create.js';
 import { documentCmd } from './commands/spec/document.js';
@@ -37,10 +37,12 @@ const t = isES ? {
   executeOptTask: 'ID de tarea específica (default: siguiente pendiente)',
   executeOptDry: 'Mostrar qué se haría sin ejecutar',
   executeOptPrompt: 'Generar prompt sin ejecutar',
+  executeOptRefresh: 'Refresh de módulos tras la tarea',
   statusDesc: 'Ver progreso del proyecto y specs',
   statusOptVerbose: 'Mostrar detalle de tareas individuales',
   refreshDesc: 'Actualizar specs del mapa del proyecto (documentación viva)',
   refreshOptPrompt: 'No ejecutar (requiere engine)',
+  refreshOptVerbose: 'Specs más detallados (presupuesto de tokens mayor)',
   archDesc: 'Generar vistas de arquitectura desde todos los specs',
   archOptLevel: 'Nivel: system | services | modules',
   archOptFlow: 'Diagrama de flujo para un feature específico',
@@ -51,7 +53,7 @@ const t = isES ? {
   examples: 'Ejemplos:',
   output: 'Salida:',
   level1: 'solo tasks.md            bug fixes, ajustes',
-  level2: 'requirements + tasks     features claros (1-3 días)',
+  level2: 'requirements + tasks     default — features claros (1-3 días)',
   level3: 'spec completo (3 arch)   features complejos / arquitectura nueva',
   newSpec: 'nuevo spec de feature',
   reverseEng: 'documentar código existente',
@@ -80,10 +82,12 @@ const t = isES ? {
   executeOptTask: 'Specific task ID (default: next pending)',
   executeOptDry: 'Show what would be done without executing',
   executeOptPrompt: 'Generate prompt without executing',
+  executeOptRefresh: 'Module refresh after task',
   statusDesc: 'Show spec progress and project overview',
   statusOptVerbose: 'Show individual task details',
   refreshDesc: 'Update project map specs (living documentation)',
   refreshOptPrompt: 'Skip execution (requires engine)',
+  refreshOptVerbose: 'More detailed specs (higher token budget)',
   archDesc: 'Generate architecture views from all specs',
   archOptLevel: 'View level: system | services | modules',
   archOptFlow: 'Show flow diagram for a specific feature',
@@ -94,7 +98,7 @@ const t = isES ? {
   examples: 'Examples:',
   output: 'Output:',
   level1: 'tasks.md only            bug fixes, tweaks',
-  level2: 'requirements + tasks     clear features (1-3 days)',
+  level2: 'requirements + tasks     default — clear features (1-3 days)',
   level3: 'full spec (3 files)      complex / new architecture',
   newSpec: 'new feature spec',
   reverseEng: 'reverse engineer code',
@@ -166,17 +170,17 @@ spec
   .description(t.createDesc)
   .option('-n, --name <name>',  t.createOptName)
   .option('-1', 'tasks.md only')
-  .option('-2', 'requirements.md + tasks.md')
-  .option('-3', 'full spec: requirements + design + tasks (default)')
+  .option('-2', 'requirements.md + tasks.md (default)')
+  .option('-3', 'full spec: requirements + design + tasks')
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec create "Fix 422 on login endpoint" -1      ${chalk.dim('→ tasks only')}
-  sdd spec create "JWT refresh tokens" -2              ${chalk.dim('→ req + tasks')}
-  sdd spec create "Hybrid RAG search pipeline"         ${chalk.dim('→ full spec')}
+  sdd spec create "JWT refresh tokens"                 ${chalk.dim('→ req + tasks (default)')}
+  sdd spec create "Hybrid RAG search pipeline" -3      ${chalk.dim('→ full spec')}
   sdd spec create --name feat-whatsapp-flow            ${chalk.dim('→ name only')}
   `)
   .action((description, opts) => {
-    const level = opts[1] ? 1 : opts[2] ? 2 : 3;
+    const level = opts[1] ? 1 : opts[3] ? 3 : 2;
     createCmd({ description, name: opts.name, level });
   });
 
@@ -201,14 +205,17 @@ spec
   .option('-t, --task <id>',   t.executeOptTask)
   .option('--dry-run',         t.executeOptDry)
   .option('-p, --prompt-only', t.executeOptPrompt)
+  .addOption(new Option('--refresh <mode>', t.executeOptRefresh).choices(['auto', 'structural', 'off']).default('structural'))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
-  sdd spec execute feat-jwt-auth                ${chalk.dim(`→ ${t.executeSpec}`)}
-  sdd spec execute feat-jwt-auth --task 1.2     ${chalk.dim(`→ ${t.executeTask}`)}
-  sdd spec execute feat-rag-search --dry-run    ${chalk.dim(`→ ${t.executeDry}`)}
+  sdd spec execute feat-jwt-auth                 ${chalk.dim(`→ ${t.executeSpec}`)}
+  sdd spec execute feat-jwt-auth --task 1.2      ${chalk.dim(`→ ${t.executeTask}`)}
+  sdd spec execute feat-rag-search --dry-run     ${chalk.dim(`→ ${t.executeDry}`)}
+  sdd spec execute feat-jwt-auth --refresh=off   ${chalk.dim('→ skip module/steering refresh')}
+  sdd spec execute feat-jwt-auth --refresh=auto  ${chalk.dim('→ refresh on any change (old behavior)')}
   `)
   .action((specName, opts) => {
-    executeCmd({ specName, taskId: opts.task, dryRun: opts.dryRun, promptOnly: opts.promptOnly });
+    executeCmd({ specName, taskId: opts.task, dryRun: opts.dryRun, promptOnly: opts.promptOnly, refreshMode: opts.refresh });
   });
 
 spec
@@ -228,13 +235,15 @@ spec
   .command('refresh [dir]')
   .description(t.refreshDesc)
   .option('-p, --prompt-only', t.refreshOptPrompt)
+  .option('-v, --verbose', t.refreshOptVerbose)
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec refresh                ${chalk.dim(`→ ${t.refreshAll}`)}
   sdd spec refresh src/core       ${chalk.dim(`→ ${t.refreshOne}`)}
+  sdd spec refresh --verbose      ${chalk.dim('→ higher token budget (2000 vs 1000)')}
   `)
   .action((dir, opts) => {
-    refreshCmd({ dir, promptOnly: opts.promptOnly || false });
+    refreshCmd({ dir, promptOnly: opts.promptOnly || false, verbose: opts.verbose || false });
   });
 
 spec

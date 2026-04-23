@@ -14,7 +14,7 @@ import { detectEngine, getEngineName, askClaude, batchAsk } from '../../core/cla
 /**
  * Refresh a single module spec. Used by execute.js post-task and by CLI command.
  */
-export async function refreshModule({ dir, cwd }) {
+export async function refreshModule({ dir, cwd, maxTokens = 1000 }) {
   const resolvedDir = path.resolve(cwd, dir);
   if (!fs.existsSync(resolvedDir) || !fs.statSync(resolvedDir).isDirectory()) return;
 
@@ -29,7 +29,7 @@ export async function refreshModule({ dir, cwd }) {
 
   const label = dir.replace(/[/\\]+/g, '-').toLowerCase() || 'root';
   const prompt = buildGroupPrompt(label, allFiles);
-  const analysis = await askClaude(prompt, { maxTokens: 2000, cwd });
+  const analysis = await askClaude(prompt, { maxTokens, cwd });
 
   const mapDir = path.join(cwd, 'specs', '_map');
   fs.mkdirSync(mapDir, { recursive: true });
@@ -40,9 +40,10 @@ export async function refreshModule({ dir, cwd }) {
 /**
  * CLI command: sdd spec refresh [dir]
  */
-export async function refreshCmd({ dir, promptOnly, cwd = process.cwd() }) {
+export async function refreshCmd({ dir, promptOnly, verbose = false, cwd = process.cwd() }) {
+  const maxTokens = verbose ? 2000 : 1000;
   console.log(`\n${chalk.bold('sdd spec refresh')} — ${chalk.cyan('update module specs')}`);
-  console.log(chalk.dim(`  Engine: ${getEngineName()}\n`));
+  console.log(chalk.dim(`  Engine: ${getEngineName()}  |  max_tokens: ${maxTokens}${verbose ? ' (verbose)' : ''}\n`));
 
   if (promptOnly) {
     console.log(chalk.yellow('  Module refresh requires an engine (API key or Claude Code CLI).\n'));
@@ -52,7 +53,7 @@ export async function refreshCmd({ dir, promptOnly, cwd = process.cwd() }) {
   if (dir) {
     const spinner = ora(`Refreshing module spec: ${dir}`).start();
     try {
-      await refreshModule({ dir, cwd });
+      await refreshModule({ dir, cwd, maxTokens });
       spinner.succeed(`Module spec updated: ${dir}`);
     } catch (err) {
       spinner.fail(`Failed to refresh ${dir}`);
@@ -96,7 +97,7 @@ export async function refreshCmd({ dir, promptOnly, cwd = process.cwd() }) {
     }, 1000);
 
     await batchAsk(items, {
-      maxTokens: 2000,
+      maxTokens,
       cwd,
       onItemDone: (label, result, i, err) => {
         const spinner = spinners.get(i);
