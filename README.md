@@ -1,14 +1,14 @@
 # sdd-kit
 
-**Spec-Driven Development for Claude Code** — language-agnostic, works with any project.
+**Spec-Driven Development for AI coding agents** — works with Claude Code, OpenAI, Ollama, vLLM, or opencode. Language-agnostic, works with any project.
 
-The biggest engineering orgs (Amazon's six-pagers, Google's design docs, Stripe's RFCs) have always written specs before code. `sdd-kit` brings that discipline to Claude Code — structured specs in, quality code out.
+The biggest engineering orgs (Amazon's six-pagers, Google's design docs, Stripe's RFCs) have always written specs before code. `sdd-kit` brings that discipline to your AI workflow — structured specs in, quality code out.
 
 ```
-You describe what to build  →  sdd-kit structures the spec  →  Claude Code executes it
+You describe what to build  →  sdd-kit structures the spec  →  your agent executes it
 ```
 
-**Not a code generator. A clarity tool.** The spec is the source of truth. Claude Code is the execution engine.
+**Not a code generator. A clarity tool.** The spec is the source of truth. Your coding agent is the execution engine — Claude Code by default, or any provider you choose.
 
 ---
 
@@ -31,12 +31,16 @@ sdd doctor                               # check your provider/CLI setup
 
 ## Requirements
 
-- **Claude Code** — the execution engine. Install: `npm install -g @anthropic-ai/claude-code`
-- **Node.js >= 18**
-- Optional: `ANTHROPIC_API_KEY` env var for faster SDK mode (bypasses Claude Code CLI for spec generation)
-- Optional: other LLM providers — OpenAI, Ollama, vLLM, or [opencode](https://github.com/sst/opencode). See [LLM providers](#llm-providers-multi-provider)
+**Node.js >= 18** is the only hard requirement. For the AI engine, pick whatever you already use:
 
-Without Claude Code, sdd-kit works in **prompt-only mode** (`--prompt-only`) — it generates structured prompts you can paste into any AI tool.
+- **Claude Code** *(default, recommended)* — the richest experience. Install: `npm install -g @anthropic-ai/claude-code`
+- **Anthropic API** — set `ANTHROPIC_API_KEY` for faster SDK mode (spec generation straight from the API)
+- **OpenAI / Ollama / vLLM** — any OpenAI-compatible provider, hosted or fully local
+- **[opencode](https://github.com/sst/opencode)** — alternative agentic CLI
+
+→ Wire up any of them in one line: [LLM providers](#llm-providers-multi-provider).
+
+No engine at all? sdd-kit still runs in **prompt-only mode** (`--prompt-only`) — it generates structured prompts you can paste into any AI tool.
 
 ## Quick start
 
