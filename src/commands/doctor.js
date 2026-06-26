@@ -5,19 +5,14 @@
  * prints a ✓/✗ checklist with actionable hints. Returns true if everything passes.
  */
 
+import fs from 'fs';
+import path from 'path';
 import chalk from 'chalk';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { getConfig } from '../core/config.js';
 import { resolveProviderName } from '../core/providers/index.js';
 import { OPENAI_COMPATIBLE, ANTHROPIC_DEFAULT_MODEL } from '../core/providers/provider.js';
-
-const execFileAsync = promisify(execFile);
-
-async function cliAvailable(cmd) {
-  try { await execFileAsync(cmd, ['--version'], { timeout: 5000 }); return true; }
-  catch { return false; }
-}
+import { cliAvailable } from '../core/cli-detect.js';
+import { skillFileFor } from './init.js';
 
 async function endpointReachable(baseURL) {
   if (typeof fetch !== 'function') return null; // can't check on this runtime
@@ -92,6 +87,15 @@ export async function doctorCmd({ cwd = process.cwd() } = {}) {
     label: `agentic CLI "${agentCmd}" on PATH`,
     detail: `model=${config.agentModel || 'inherit'}`,
     hint: agentCmd === 'opencode' ? 'install opencode, or set agent_cli=claude' : 'install Claude Code, or commands fall back to --prompt-only',
+  });
+
+  // SDD skill file discoverable by the active agentic CLI.
+  const skillRel = skillFileFor(agentCmd);
+  checks.push({
+    ok: fs.existsSync(path.join(cwd, skillRel)),
+    label: 'SDD skill file present',
+    detail: skillRel,
+    hint: 'run `sdd init` to create it',
   });
 
   console.log('');
