@@ -17,6 +17,13 @@ import { renameCmd }   from './commands/spec/rename.js';
 import { archiveCmd }  from './commands/spec/archive.js';
 import { archCmd }     from './commands/arch.js';
 import { configCmd }   from './commands/config.js';
+import { doctorCmd }   from './commands/doctor.js';
+import { setOverrides } from './core/config.js';
+
+// Apply per-command LLM overrides (--provider / --model) at highest precedence.
+const applyProviderFlags = (opts) => setOverrides({ provider: opts.provider, model: opts.model });
+const PROVIDER_OPT = (isEs) => isEs ? 'Proveedor LLM para este comando (override de .sddrc/env)' : 'LLM provider for this command (overrides .sddrc/env)';
+const MODEL_OPT = (isEs) => isEs ? 'Modelo para este comando (override de .sddrc/env)' : 'Model for this command (overrides .sddrc/env)';
 
 // ─── Language detection ──────────────────────────────────────────────────────
 
@@ -124,7 +131,7 @@ const program = new Command();
 program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
-  .version('0.6.0')
+  .version('0.7.0')
   .configureHelp({
     visibleCommands(cmd) {
       const cmds = [];
@@ -158,6 +165,7 @@ ${chalk.bold(t.quickStart)}
   ${chalk.cyan('sdd spec refresh')}                               ${chalk.dim(`→ ${t.refreshAll}`)}
   ${chalk.cyan('sdd arch')}                                       ${chalk.dim(`→ ${t.archDashboard}`)}
   ${chalk.cyan('sdd config')}                                     ${chalk.dim(`→ ${isES ? 'ver configuración activa' : 'show active config'}`)}
+  ${chalk.cyan('sdd doctor')}                                     ${chalk.dim(`→ ${isES ? 'validar proveedor/CLI activo' : 'validate provider/CLI setup'}`)}
 
 ${chalk.bold(t.specLevels)}
   ${chalk.red('-1')}   ${t.level1}
@@ -176,6 +184,8 @@ spec
   .option('-1', 'tasks.md only')
   .option('-2', 'requirements.md + tasks.md (default)')
   .option('-3', 'full spec: requirements + design + tasks')
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec create "Fix 422 on login endpoint" -1      ${chalk.dim('→ tasks only')}
@@ -184,6 +194,7 @@ ${chalk.bold(t.examples)}
   sdd spec create --name feat-whatsapp-flow            ${chalk.dim('→ name only')}
   `)
   .action((description, opts) => {
+    applyProviderFlags(opts);
     const level = opts[1] ? 1 : opts[3] ? 3 : 2;
     createCmd({ description, name: opts.name, level });
   });
@@ -193,6 +204,8 @@ spec
   .description(t.documentDesc)
   .option('-n, --name <name>',  t.documentOptName)
   .option('-p, --prompt-only',  t.documentOptPrompt)
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec document src/auth/
@@ -200,6 +213,7 @@ ${chalk.bold(t.examples)}
   sdd spec document src/components/Dashboard.tsx --prompt-only
   `)
   .action((source, opts) => {
+    applyProviderFlags(opts);
     documentCmd({ source, name: opts.name, promptOnly: opts.promptOnly || false });
   });
 
@@ -210,6 +224,8 @@ spec
   .option('--dry-run',         t.executeOptDry)
   .option('-p, --prompt-only', t.executeOptPrompt)
   .addOption(new Option('--refresh <mode>', t.executeOptRefresh).choices(['auto', 'structural', 'off']).default('structural'))
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec execute feat-jwt-auth                 ${chalk.dim(`→ ${t.executeSpec}`)}
@@ -219,6 +235,7 @@ ${chalk.bold(t.examples)}
   sdd spec execute feat-jwt-auth --refresh=auto  ${chalk.dim('→ refresh on any change (old behavior)')}
   `)
   .action((specName, opts) => {
+    applyProviderFlags(opts);
     executeCmd({ specName, taskId: opts.task, dryRun: opts.dryRun, promptOnly: opts.promptOnly, refreshMode: opts.refresh });
   });
 
@@ -242,6 +259,8 @@ spec
   .option('-v, --verbose', t.refreshOptVerbose)
   .option('-f, --force', t.refreshOptForce)
   .option('-d, --deep', t.refreshOptDeep)
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec refresh                ${chalk.dim(`→ ${t.refreshAll}`)}
@@ -251,6 +270,7 @@ ${chalk.bold(t.examples)}
   sdd spec refresh --deep         ${chalk.dim('→ send full contents instead of symbol summaries')}
   `)
   .action((dir, opts) => {
+    applyProviderFlags(opts);
     refreshCmd({
       dir,
       promptOnly: opts.promptOnly || false,
@@ -299,6 +319,8 @@ program
   .option('-f, --flow <feature>', t.archOptFlow)
   .option('-o, --output <path>',  t.archOptOutput)
   .option('-p, --prompt-only',    t.archOptPrompt)
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.output)}
   specs/_arch/architecture.md   ${chalk.dim(t.mermaid)}
@@ -311,6 +333,7 @@ ${chalk.bold(t.examples)}
   sdd arch --prompt-only
   `)
   .action((opts) => {
+    applyProviderFlags(opts);
     archCmd({ level: opts.level, flow: opts.flow, output: opts.output, promptOnly: opts.promptOnly || false });
   });
 
@@ -320,12 +343,15 @@ program
   .command('init')
   .description(t.initDesc)
   .option('-a, --auto', t.initOptAuto)
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd init                ${chalk.dim(`→ ${t.initManual}`)}
   sdd init --auto         ${chalk.dim(`→ ${t.initAuto}`)}
   `)
   .action((opts) => {
+    applyProviderFlags(opts);
     import('./commands/init.js').then(m => m.initCmd({ auto: opts.auto || false }));
   });
 
@@ -336,6 +362,19 @@ program
   .description(isES ? 'Mostrar configuración activa' : 'Show active configuration')
   .action(() => {
     configCmd();
+  });
+
+// ─── sdd doctor ────────────────────────────────────────────────────────────
+
+program
+  .command('doctor')
+  .description(isES ? 'Validar el setup de proveedor/CLI activo' : 'Validate the active provider / agentic CLI setup')
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
+  .action(async (opts) => {
+    applyProviderFlags(opts);
+    const ok = await doctorCmd();
+    process.exitCode = ok ? 0 : 1;
   });
 
 program.parse();

@@ -9,37 +9,104 @@ import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import chalk from 'chalk';
 import { debugLog } from './log.js';
+import { getConfig } from './config.js';
 
 const execFileAsync = promisify(execFile);
 
 export const Mode = { CLAUDE: 'claude', PROMPT: 'prompt' };
 
-// ─── Claude CLI detection ────────────────────────────────────────────────────
+// ─── Agentic CLI descriptors ─────────────────────────────────────────────────
+// Each agentic CLI describes how to check availability and build its args.
+// `claude` is the verified default; `opencode` is best-effort (verify the flags
+// against an installed opencode — its `run` subcommand and --model flag).
+export const AGENT_CLIS = {
+  claude: {
+    command: 'claude',
+    versionArgs: ['--version'],
+    parse: 'stream-json',
+    buildArgs({ prompt, model, allowedTools = 'Read,Write,Glob,Grep', maxBudget }) {
+      const args = ['-p', prompt, '--allowedTools', allowedTools, '--output-format', 'stream-json', '--verbose'];
+      if (model) args.push('--model', model);          // empty = inherit Claude Code default
+      if (maxBudget) args.push('--max-budget-usd', String(maxBudget));
+      return args;
+    },
+  },
+  opencode: {
+    command: 'opencode',
+    versionArgs: ['--version'],
+    parse: 'opencode-json',
+    // `opencode run [message..]` — prompt is positional; -m/--model takes a
+    // provider/model value (e.g. "anthropic/claude-sonnet-4-6"). `--format json`
+    // emits line-delimited events (parsed defensively below). Permissions are
+    // skipped so it runs autonomously (the analog of claude's --allowedTools).
+    buildArgs({ prompt, model }) {
+      const args = ['run', prompt, '--format', 'json', '--dangerously-skip-permissions'];
+      if (model) args.push('--model', model);
+      return args;
+    },
+  },
+};
 
-let _claudeAvailable = null;
+function getAgentCli(cwd) {
+  const { agentCli } = getConfig(cwd);
+  return AGENT_CLIS[agentCli] || AGENT_CLIS.claude;
+}
 
-async function isClaudeAvailable() {
-  if (_claudeAvailable !== null) return _claudeAvailable;
-  try {
-    await execFileAsync('claude', ['--version'], { timeout: 5000 });
-    _claudeAvailable = true;
-  } catch (err) {
-    debugLog('generator', `Claude Code CLI not available: ${err.message}`);
-    _claudeAvailable = false;
+/**
+ * Map one opencode `--format json` event to a normalized update (pure; exported
+ * for testing). Returns null for events we don't surface. Defensive against
+ * schema drift — unknown shapes simply yield null.
+ * @returns {null | {kind:'text', id:string, text:string} | {kind:'tool', name:string, detail:string} | {kind:'thinking'} | {kind:'cost', cost:number}}
+ */
+export function parseOpencodeEvent(event) {
+  if (!event || typeof event !== 'object') return null;
+  if (event.type === 'message.part.updated' && event.part) {
+    const part = event.part;
+    if (part.type === 'text' && typeof part.text === 'string') {
+      return { kind: 'text', id: part.id || 'text', text: part.text };
+    }
+    if (part.type === 'tool') {
+      const input = part.input || {};
+      const detail = part.state || input.file_path || input.path || input.pattern || '';
+      return { kind: 'tool', name: part.name || part.tool || 'tool', detail: String(detail) };
+    }
+    if (part.type === 'thinking') return { kind: 'thinking' };
+    return null;
   }
-  return _claudeAvailable;
+  if (event.type === 'step-finish' || event.type === 'step_finish') {
+    if (typeof event.cost === 'number') return { kind: 'cost', cost: event.cost };
+  }
+  return null;
 }
 
-export async function detectMode(promptOnly = false) {
+// ─── Agentic CLI detection ───────────────────────────────────────────────────
+
+const _cliAvailable = {}; // command -> boolean
+
+async function isAgentCliAvailable(descriptor) {
+  if (_cliAvailable[descriptor.command] !== undefined) return _cliAvailable[descriptor.command];
+  try {
+    await execFileAsync(descriptor.command, descriptor.versionArgs, { timeout: 5000 });
+    _cliAvailable[descriptor.command] = true;
+  } catch (err) {
+    debugLog('generator', `${descriptor.command} CLI not available: ${err.message}`);
+    _cliAvailable[descriptor.command] = false;
+  }
+  return _cliAvailable[descriptor.command];
+}
+
+export async function detectMode(promptOnly = false, cwd = process.cwd()) {
   if (promptOnly) return Mode.PROMPT;
-  return (await isClaudeAvailable()) ? Mode.CLAUDE : Mode.PROMPT;
+  const descriptor = getAgentCli(cwd);
+  return (await isAgentCliAvailable(descriptor)) ? Mode.CLAUDE : Mode.PROMPT;
 }
 
-// ─── Claude CLI caller ──────────────────────────────────────────────────────
+// ─── Agentic CLI caller ──────────────────────────────────────────────────────
 
-async function callClaude(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', maxBudget, onProgress } = {}) {
-  const args = ['-p', prompt, '--allowedTools', allowedTools, '--output-format', 'stream-json', '--verbose'];
-  if (maxBudget) args.push('--max-budget-usd', String(maxBudget));
+async function callAgentCli(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', maxBudget, onProgress } = {}) {
+  const descriptor = getAgentCli(cwd);
+  const { agentModel } = getConfig(cwd);
+  const args = descriptor.buildArgs({ prompt, model: agentModel, allowedTools, maxBudget });
 
   const debug = process.env.SDD_DEBUG === '1';
 
@@ -47,7 +114,7 @@ async function callClaude(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', 
     // Remove CLAUDECODE env var to avoid "nested session" block
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    const proc = spawn('claude', args, {
+    const proc = spawn(descriptor.command, args, {
       cwd,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -55,47 +122,62 @@ async function callClaude(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', 
     let fullOutput = '';
     let lastText = '';
     let buffer = '';
+    let rawStdout = '';
+    let lastCost;
+    const opencodeTexts = new Map(); // part id -> latest text
+
+    // Claude Code stream-json: content blocks with text + tool_use.
+    const handleClaudeEvent = (event) => {
+      const content = event.message?.content || event.content;
+      if (content && Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text') lastText += block.text;
+          if (block.type === 'tool_use' && onProgress) {
+            const tool = block.name;
+            const input = block.input || {};
+            let detail = '';
+            if (tool === 'Read' || tool === 'Write' || tool === 'Edit') detail = input.file_path || '';
+            else if (tool === 'Glob' || tool === 'Grep') detail = input.pattern || '';
+            else if (tool === 'Bash') detail = (input.command || '').slice(0, 60);
+            onProgress({ tool, detail });
+          }
+        }
+      }
+      if (event.type === 'result') {
+        fullOutput = lastText || (event.result || '');
+        if (onProgress && (event.cost_usd || event.cost)) onProgress({ done: true, cost: event.cost_usd || event.cost });
+      }
+    };
+
+    // opencode --format json: message.part.updated (tool|text|thinking) + step-finish.
+    // Defensive: schema may evolve and the final step event isn't guaranteed, so the
+    // output is resolved from accumulated text parts at process close, not on an event.
+    const handleOpencodeEvent = (event) => {
+      const u = parseOpencodeEvent(event);
+      if (!u) return;
+      if (u.kind === 'text') opencodeTexts.set(u.id, u.text);
+      else if (u.kind === 'tool' && onProgress) onProgress({ tool: u.name, detail: u.detail });
+      else if (u.kind === 'thinking' && onProgress) onProgress({ tool: 'thinking', detail: '' });
+      else if (u.kind === 'cost') lastCost = u.cost;
+    };
 
     proc.stdout.on('data', (chunk) => {
-      buffer += chunk.toString();
+      const text = chunk.toString();
+      rawStdout += text;
+      if (descriptor.parse === 'text') return; // collect raw stdout only
+
+      buffer += text;
       const lines = buffer.split('\n');
       buffer = lines.pop(); // keep incomplete line
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        try {
-          const event = JSON.parse(line);
-          if (debug) fs.appendFileSync('/tmp/sdd-debug.jsonl', line + '\n');
-
-          // Handle content blocks (tool_use, text)
-          const content = event.message?.content || event.content;
-          if (content && Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'text') {
-                lastText += block.text;
-              }
-              if (block.type === 'tool_use' && onProgress) {
-                const tool = block.name;
-                const input = block.input || {};
-                let detail = '';
-                if (tool === 'Read') detail = input.file_path || '';
-                else if (tool === 'Write') detail = input.file_path || '';
-                else if (tool === 'Edit') detail = input.file_path || '';
-                else if (tool === 'Glob') detail = input.pattern || '';
-                else if (tool === 'Grep') detail = input.pattern || '';
-                else if (tool === 'Bash') detail = (input.command || '').slice(0, 60);
-                onProgress({ tool, detail });
-              }
-            }
-          }
-
-          if (event.type === 'result') {
-            fullOutput = lastText || (event.result || '');
-            if (onProgress && (event.cost_usd || event.cost)) {
-              onProgress({ done: true, cost: event.cost_usd || event.cost });
-            }
-          }
-        } catch (err) { debugLog('generator', `Non-JSON line in Claude output: ${line.slice(0, 80)}`); }
+        let event;
+        try { event = JSON.parse(line); }
+        catch { debugLog('generator', `Non-JSON line from ${descriptor.command}: ${line.slice(0, 80)}`); continue; }
+        if (debug) fs.appendFileSync('/tmp/sdd-debug.jsonl', line + '\n');
+        if (descriptor.parse === 'opencode-json') handleOpencodeEvent(event);
+        else handleClaudeEvent(event); // stream-json
       }
     });
 
@@ -105,21 +187,30 @@ async function callClaude(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', 
     proc.on('close', (code) => {
       clearTimeout(timer);
       if (code !== 0) {
-        reject(new Error(`Claude Code failed (exit ${code}): ${stderr || 'unknown error'}`));
-      } else {
+        reject(new Error(`${descriptor.command} failed (exit ${code}): ${stderr || 'unknown error'}`));
+        return;
+      }
+      if (descriptor.parse === 'stream-json') {
         resolve(fullOutput);
+      } else if (descriptor.parse === 'opencode-json') {
+        if (onProgress) onProgress({ done: true, cost: lastCost });
+        const joined = [...opencodeTexts.values()].join('').trim();
+        resolve(joined || rawStdout.trim());
+      } else {
+        if (onProgress) onProgress({ done: true });
+        resolve(rawStdout.trim());
       }
     });
 
     proc.on('error', (err) => {
       clearTimeout(timer);
-      reject(new Error(`Claude Code failed: ${err.message}`));
+      reject(new Error(`${descriptor.command} failed: ${err.message}`));
     });
 
     // 10 min timeout
     const timer = setTimeout(() => {
       proc.kill();
-      reject(new Error('Claude Code timed out (10 min)'));
+      reject(new Error(`${descriptor.command} timed out (10 min)`));
     }, 600000);
   });
 }
@@ -320,7 +411,7 @@ A JSON object (no markdown fences):
 // ─── Public API ───────────────────────────────────────────────────────────
 
 export async function generateCreateSpec({ description, specName, size, projectContext, promptOnly, cwd, onProgress }) {
-  const mode = await detectMode(promptOnly);
+  const mode = await detectMode(promptOnly, cwd);
   const sizeConfig = SIZE_INSTRUCTIONS[size] || SIZE_INSTRUCTIONS.large;
   const basePrompt = sizeConfig.prompt(specName, description);
   const contextBlock = projectContext
@@ -329,7 +420,7 @@ export async function generateCreateSpec({ description, specName, size, projectC
   const fullPrompt = basePrompt + contextBlock;
 
   if (mode === Mode.CLAUDE) {
-    await callClaude(fullPrompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 0.5, onProgress });
+    await callAgentCli(fullPrompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 0.5, onProgress });
     return { mode, specName };
   }
 
@@ -337,11 +428,11 @@ export async function generateCreateSpec({ description, specName, size, projectC
 }
 
 export async function generateDocumentSpec({ source, specName, promptOnly, cwd, onProgress }) {
-  const mode = await detectMode(promptOnly);
+  const mode = await detectMode(promptOnly, cwd);
   const prompt = DOCUMENT_PROMPT(source, specName);
 
   if (mode === Mode.CLAUDE) {
-    await callClaude(prompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 0.5, onProgress });
+    await callAgentCli(prompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 0.5, onProgress });
     return { mode, specName };
   }
 
@@ -349,11 +440,11 @@ export async function generateDocumentSpec({ source, specName, promptOnly, cwd, 
 }
 
 export async function generateArchitecture({ promptOnly, cwd, moduleSpecs, steering, featureSpecs, onProgress }) {
-  const mode = await detectMode(promptOnly);
+  const mode = await detectMode(promptOnly, cwd);
   const prompt = buildArchPrompt({ moduleSpecs, steering, featureSpecs });
 
   if (mode === Mode.CLAUDE) {
-    const raw = await callClaude(prompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 1.0, onProgress });
+    const raw = await callAgentCli(prompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 1.0, onProgress });
     return { mode, raw };
   }
 
@@ -379,10 +470,10 @@ When done, mark it \`[x]\` in tasks.md.`;
 }
 
 export async function executeTask({ prompt, promptOnly, cwd, onProgress }) {
-  const mode = await detectMode(promptOnly);
+  const mode = await detectMode(promptOnly, cwd);
 
   if (mode === Mode.CLAUDE) {
-    await callClaude(prompt, { cwd, allowedTools: 'Read,Write,Edit,Glob,Grep,Bash', onProgress });
+    await callAgentCli(prompt, { cwd, allowedTools: 'Read,Write,Edit,Glob,Grep,Bash', onProgress });
     return { mode };
   }
 

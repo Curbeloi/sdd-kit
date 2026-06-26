@@ -47,7 +47,7 @@ sdd <command> [flags]
 - [ ] I've read the [CONTRIBUTING](CONTRIBUTING.md) guidelines
 - [ ] My code follows the project's coding standards (ESM, async/await, etc.)
 - [ ] I've added/updated tests for my changes
-- [ ] All tests pass (`npm test`)
+- [ ] All tests pass (`pnpm test`)
 - [ ] The CLI remains language-agnostic (no framework-specific assumptions)
 - [ ] Works on Node.js >= 18
 - [ ] I've updated documentation if needed

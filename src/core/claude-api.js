@@ -1,98 +1,71 @@
 /**
- * claude-api.js — Unified Claude client with two engines:
+ * claude-api.js — Facade over the LLM provider layer (src/core/providers/).
  *
- * 1. SDK mode (fast): Uses @anthropic-ai/sdk directly via API key
- *    - ~5s per request, parallel-friendly
- *    - Requires: ANTHROPIC_API_KEY env var
+ * Public surface (unchanged signatures — consumers in init/refresh/document
+ * keep working):
+ *   - detectEngine(cwd)   → resolved provider name
+ *   - getEngineName(cwd)  → human-readable provider label
+ *   - askClaude(prompt, opts)
+ *   - batchAsk(items, opts)
  *
- * 2. CLI mode (fallback): Uses `claude -p` CLI
- *    - Uses your Claude Code subscription (Pro/Max)
- *    - Slower due to process startup overhead
- *    - Optimized with: --model sonnet, --effort low, --no-session-persistence
- *
- * Auto-detects: SDK if API key exists, otherwise CLI.
+ * Providers (Anthropic SDK, OpenAI-compatible, Claude CLI) and selection logic
+ * live in src/core/providers/. This file just wires them to the existing API.
  */
 
-import { spawn } from 'child_process';
-import { debugLog } from './log.js';
 import { getConfig } from './config.js';
-
-let _sdk = null;
-let _mode = null; // 'sdk' | 'cli' | null
+import { DEFAULT_MAX_TOKENS } from './providers/provider.js';
+import { selectProvider, resolveProviderName } from './providers/index.js';
 
 /**
- * Detect which engine is available. SDK takes priority (faster).
+ * Resolved provider name ('anthropic' | 'openai' | 'ollama' | 'vllm' | 'claude-cli').
  */
-export function detectEngine() {
-  if (_mode) return _mode;
-
-  if (process.env.ANTHROPIC_API_KEY) {
-    _mode = 'sdk';
-  } else {
-    _mode = 'cli';
-  }
-  return _mode;
-}
-
-export function getEngineName() {
-  const m = detectEngine();
-  return m === 'sdk' ? 'Anthropic API (fast)' : 'Claude Code CLI';
+export function detectEngine(cwd = process.cwd()) {
+  return resolveProviderName(cwd);
 }
 
 /**
- * Get or create the SDK client (lazy).
+ * Human-readable label for the active provider (for status lines).
  */
-async function getSdkClient() {
-  if (_sdk) return _sdk;
-  let Anthropic;
-  try {
-    ({ default: Anthropic } = await import('@anthropic-ai/sdk'));
-  } catch (err) {
-    debugLog('claude-api', `SDK import failed: ${err.message}`);
-    throw new Error(
-      'Could not load @anthropic-ai/sdk. Install it with: npm install @anthropic-ai/sdk'
-    );
-  }
-  _sdk = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return _sdk;
+export function getEngineName(cwd = process.cwd()) {
+  return selectProvider(cwd).label;
+}
+
+// Process-based providers can't fan out as wide as HTTP ones.
+function isProcessProvider(name) {
+  return name === 'claude-cli';
 }
 
 /**
- * Send a prompt and get text back.
- * Automatically uses SDK or CLI depending on what's available.
+ * Send a prompt and get text back via the active provider.
  *
  * @param {string} prompt
  * @param {object} opts
  * @param {number} opts.maxTokens - Max output tokens (default: 2000)
- * @param {string} opts.cwd - Working directory (for CLI mode)
+ * @param {string} opts.cwd - Working directory (for CLI provider)
  * @returns {Promise<string>}
  */
-export async function askClaude(prompt, { maxTokens = 2000, cwd } = {}) {
-  const engine = detectEngine();
-
-  if (engine === 'sdk') {
-    return askSdk(prompt, { maxTokens });
-  }
-  return askCli(prompt, { cwd, maxTokens });
+export async function askClaude(prompt, { maxTokens = DEFAULT_MAX_TOKENS, cwd } = {}) {
+  const provider = selectProvider(cwd);
+  return provider.ask(prompt, { maxTokens, cwd });
 }
 
 /**
- * Batch multiple prompts in parallel.
- * SDK mode: true parallel HTTP requests.
- * CLI mode: limited parallel processes.
+ * Batch multiple prompts with a bounded worker pool.
+ * HTTP providers fan out to the configured concurrency; the CLI provider is capped.
  *
  * @param {Array<{prompt: string, label: string}>} items
  * @param {object} opts
- * @param {number} opts.concurrency - Max parallel (default: 4 SDK, 2 CLI)
+ * @param {number} opts.concurrency - Max parallel (default: config, capped for CLI)
  * @param {number} opts.maxTokens
  * @param {string} opts.cwd
  * @param {function} opts.onItemDone - Callback(label, result|null, index, error?)
  * @returns {Promise<Array<{label: string, result?: string, error?: string}>>}
  */
-export async function batchAsk(items, { concurrency, maxTokens = 2000, cwd, onItemDone } = {}) {
-  const engine = detectEngine();
+export async function batchAsk(items, { concurrency, maxTokens = DEFAULT_MAX_TOKENS, cwd, onItemDone } = {}) {
+  const provider = selectProvider(cwd);
   const configConcurrency = getConfig(cwd).concurrency;
-  const maxConcurrency = concurrency || (engine === 'sdk' ? configConcurrency : Math.min(configConcurrency, 2));
+  const maxConcurrency = concurrency ||
+    (isProcessProvider(provider.name) ? Math.min(configConcurrency, 2) : configConcurrency);
 
   const results = new Array(items.length);
   let cursor = 0;
@@ -102,7 +75,7 @@ export async function batchAsk(items, { concurrency, maxTokens = 2000, cwd, onIt
       const i = cursor++;
       const { prompt, label } = items[i];
       try {
-        const result = await askClaude(prompt, { maxTokens, cwd });
+        const result = await provider.ask(prompt, { maxTokens, cwd });
         results[i] = { label, result };
         if (onItemDone) onItemDone(label, result, i);
       } catch (err) {
@@ -118,81 +91,4 @@ export async function batchAsk(items, { concurrency, maxTokens = 2000, cwd, onIt
   );
   await Promise.all(workers);
   return results;
-}
-
-// ─── SDK engine ───────────────────────────────────────────────────────────
-
-async function askSdk(prompt, { maxTokens }) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (apiKey && !apiKey.startsWith('sk-')) {
-    throw new Error(`Invalid ANTHROPIC_API_KEY — expected key starting with "sk-", got "${apiKey.slice(0, 6)}..."`);
-  }
-
-  const client = await getSdkClient();
-
-  // 5-minute timeout via AbortController
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 300000);
-
-  try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
-    }, { signal: controller.signal });
-
-    return response.content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('');
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      throw new Error('SDK request timed out (5 min)');
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// ─── CLI engine ───────────────────────────────────────────────────────────
-
-function askCli(prompt, { cwd, maxTokens }) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '-p', prompt,
-      '--output-format', 'text',
-      '--model', 'sonnet',
-      '--effort', 'low',
-      '--no-session-persistence',
-      '--max-budget-usd', '0.5',
-    ];
-
-    // Remove CLAUDECODE env var to avoid "nested session" block
-    const env = { ...process.env };
-    delete env.CLAUDECODE;
-
-    const proc = spawn('claude', args, {
-      cwd: cwd || process.cwd(),
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],  // close stdin so claude doesn't hang
-    });
-
-    let stdout = '';
-    let stderr = '';
-    proc.stdout.on('data', (d) => { stdout += d.toString(); });
-    proc.stderr.on('data', (d) => { stderr += d.toString(); });
-
-    proc.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) reject(new Error(stderr || `claude exit ${code}`));
-      else resolve(stdout.trim());
-    });
-    proc.on('error', (err) => reject(err));
-
-    const timer = setTimeout(() => {
-      proc.kill();
-      reject(new Error('timeout (5 min)'));
-    }, 300000);
-  });
 }
