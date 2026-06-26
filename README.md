@@ -14,12 +14,12 @@ You describe what to build  →  sdd-kit structures the spec  →  your agent ex
 
 ## Highlights
 
-- 🧩 **Any LLM provider** — Anthropic, OpenAI, **Ollama**, **vLLM**, or [opencode](https://github.com/sst/opencode). Switch with one line of config. → [LLM providers](#llm-providers-multi-provider)
-- 📐 **Right-sized specs** — `-1` for a bug fix, `-3` for new architecture. No ceremony you don't need.
+- 🧩 **Any LLM provider** — Anthropic, OpenAI, **Ollama**, **vLLM**, or [opencode](https://github.com/sst/opencode). Switch in one command: `sdd provider set openai`. → [LLM providers](#llm-providers-multi-provider)
+- 📐 **Right-sized specs** — `-1` for a bug fix, `-3` for new architecture. Auto-filed by type into `features/`, `bugfix/`, `chore/`, … → [Spec name & type](#sdd-spec-create-description)
 - 🔄 **Living documentation** — feature specs, a per-directory module map, and architecture views stay in sync with your code automatically.
 - 🩺 **`sdd doctor`** — one command validates your whole setup (keys, packages, endpoints, CLIs) before you run.
 - 🌍 **Language-agnostic** — pure Markdown, lives in git, works with any stack. No lock-in.
-- 🤖 **Claude Code native** — specs become structured context, so Claude writes code that fits *your* project.
+- 🤖 **Claude Code native** — `sdd init` drops a skill file where your agent (Claude Code or opencode) finds it, so it understands sdd-kit from day one.
 
 ```bash
 sdd spec create "JWT auth for the API"   # structure the spec
@@ -56,17 +56,18 @@ npm install -g sdd-kit      # or run ad-hoc with: npx sdd-kit <command>
 
 ### Step 2 — Choose your engine *(optional)*
 
-By default sdd-kit uses **Claude Code** (if `claude` is installed) or the **Anthropic API** (if `ANTHROPIC_API_KEY` is set). To use OpenAI, a local Ollama, vLLM, or opencode, set it once in a `.sddrc` file at your project root:
+By default sdd-kit uses **Claude Code** (if `claude` is installed) or the **Anthropic API** (if `ANTHROPIC_API_KEY` is set). To use OpenAI, a local Ollama, vLLM, or opencode, switch in one command:
 
-```jsonc
-// .sddrc — example: local Ollama, no API key needed
-{ "provider": "ollama", "model": "llama3.1" }
+```bash
+sdd provider list                       # see providers + the active one
+sdd provider set ollama --model llama3.1 # writes .sddrc (no API key needed for Ollama)
 ```
 
-Then confirm everything is wired up before you run anything real:
+`sdd provider set` only touches the keys you pass — the rest of your `.sddrc` is preserved. (You can still hand-edit `.sddrc` if you prefer.) Then confirm everything is wired up before you run anything real:
 
 ```bash
 sdd doctor                  # ✓ package, ✓ endpoint reachable, ✓ model, ✓ CLI on PATH
+sdd provider models         # list the models your endpoint actually serves
 ```
 
 → Full options in [LLM providers](#llm-providers-multi-provider).
@@ -168,7 +169,7 @@ Everything is Markdown. Everything lives in git. No lock-in.
 
 ### `sdd init`
 
-Scaffolds the SDD structure in your project. Creates `.claude/steering/` with template files, `specs/features/` directory, and adds an SDD section to `CLAUDE.md` so Claude always knows about your documentation.
+Scaffolds the SDD structure in your project: `.claude/steering/` template files, the `specs/` directory, and the instruction + skill files your agent reads.
 
 ```bash
 # Template steering docs (manual edit)
@@ -178,7 +179,26 @@ sdd init
 sdd init --auto
 ```
 
-Safe to run multiple times — skips existing steering files, updates CLAUDE.md section idempotently.
+**Instruction file** — the SDD section is written to the file your agent reads as its source of project guidance:
+
+| Detected on PATH | Instruction file |
+|------------------|------------------|
+| `claude` | `CLAUDE.md` (Claude Code's primary; also opencode's fallback) |
+| `opencode` | `AGENTS.md` (opencode's primary) **+** `CLAUDE.md` |
+| neither | `CLAUDE.md` |
+
+`CLAUDE.md` is always written (it's the universal baseline). `AGENTS.md` is created **only when opencode is detected** — and an existing `AGENTS.md` is always kept in sync, whichever agent you use.
+
+**Skill file** — an SDD skill is dropped where the agent discovers it automatically, so it understands sdd-kit's workflow from the first session:
+
+| Detected on PATH | Skill file |
+|------------------|------------|
+| `claude` | `.claude/skills/sdd/SKILL.md` |
+| `opencode` | `skills/sdd/SKILL.md` |
+| both | both |
+| neither | `skills/sdd/SKILL.md` (generic fallback) |
+
+Safe to run multiple times — skips existing steering and skill files, updates the instruction-file section idempotently.
 
 ### `sdd spec document <path>`
 
@@ -221,19 +241,33 @@ sdd spec create "Hybrid RAG search pipeline" -3
 sdd spec create "WhatsApp webhook integration" --name feat-whatsapp-hooks
 ```
 
-**Spec name & "type".** sdd-kit models the **size** of a change (`-1`/`-2`/`-3`) — it does *not* enforce a fixed set of types. The "type" is simply the **prefix you choose in `--name`**, and it's free-form: `feat-`, `fix-`, `bug-`, `chore-`, `refactor-`, `docs-`, `perf-`, whatever your team uses.
+**Spec name, "type" & folder.** sdd-kit models the **size** of a change (`-1`/`-2`/`-3`) — it does *not* enforce a fixed set of types. The "type" is simply the **prefix you choose in `--name`** (`feat-`, `fix-`, `chore-`, …), and that prefix also decides **which folder** the spec is filed under:
+
+| Name prefix | Folder |
+|-------------|--------|
+| `feat-` / `feature-` *(and auto-generated names)* | `specs/features/` |
+| `fix-` / `bug-` / `bugfix-` | `specs/bugfix/` |
+| `hotfix-` | `specs/hotfix/` |
+| `chore-` | `specs/chore/` |
+| `refactor-` | `specs/refactor/` |
+| `docs-` / `doc-` | `specs/docs/` |
+| `perf-` | `specs/perf/` |
+| `test-` | `specs/test/` |
+| any other prefix | `specs/features/` (fallback) |
 
 - With `--name`, the name is used **verbatim** — pick any prefix.
-- Without `--name`, the name is auto-generated from the description and **always prefixed `feat-`** (even for a bug fix).
+- Without `--name`, the name is auto-generated from the description and **always prefixed `feat-`** (so it lands in `features/`).
 
 ```bash
-sdd spec create "Fix 422 on login"    -1 --name fix-login-422     # bug fix
-sdd spec create "Bump dependencies"    -1 --name chore-deps        # chore
-sdd spec create "Refactor auth module" -2 --name refactor-auth     # refactor
-sdd spec create "Add JWT auth"                                     # → feat-add-jwt-auth (auto)
+sdd spec create "Fix 422 on login"    -1 --name fix-login-422     # → specs/bugfix/fix-login-422/
+sdd spec create "Bump dependencies"    -1 --name chore-deps        # → specs/chore/chore-deps/
+sdd spec create "Refactor auth module" -2 --name refactor-auth     # → specs/refactor/refactor-auth/
+sdd spec create "Add JWT auth"                                     # → specs/features/feat-add-jwt-auth/
 ```
 
-> Tip: choose the **size flag** for ceremony (`-1` bug fix → `-3` architecture) and the **`--name` prefix** for type. Use `--name` whenever you want anything other than `feat-`.
+Every command (`list`, `status`, `execute`, `delete`, `rename`, `archive`, `arch`) finds specs across **all** type folders automatically — `feat-*` stays in `specs/features/` exactly as before, so existing projects are unaffected.
+
+> Tip: choose the **size flag** for ceremony (`-1` bug fix → `-3` architecture) and the **`--name` prefix** for type/folder. Use `--name` whenever you want anything other than `feat-`.
 
 ### `sdd spec status [spec-name]`
 
@@ -411,12 +445,34 @@ Available options:
 
 ### `sdd doctor`
 
-Validates your active provider/CLI setup — keys, the `openai` package, endpoint reachability, model, and the agentic CLI on `PATH`. Exits non-zero on failure (CI-friendly). See [LLM providers](#llm-providers-multi-provider).
+Validates your active provider/CLI setup — keys, the `openai` package, endpoint reachability, model, the agentic CLI on `PATH`, and that the SDD skill file exists. Exits non-zero on failure (CI-friendly). See [LLM providers](#llm-providers-multi-provider).
 
 ```bash
 sdd doctor
 sdd doctor --provider ollama --model llama3.1   # check a specific setup
 ```
+
+### `sdd provider`
+
+Inspect, switch, and configure the LLM provider without hand-editing `.sddrc`.
+
+```bash
+# See every provider and which one is active (+ where it's configured)
+sdd provider list
+
+# Switch provider — writes only the keys you pass into .sddrc, preserving the rest
+sdd provider set openai --model gpt-4o
+sdd provider set ollama --model llama3.1
+sdd provider set vllm --model meta-llama/Llama-3.1-8B-Instruct --base-url http://localhost:8000/v1
+
+# List the models your active endpoint actually serves
+sdd provider models
+sdd provider models --provider anthropic   # query a specific provider
+```
+
+- **`list`** highlights the active provider and its source (`.sddrc` / env / default / auto-detect).
+- **`set <provider>`** validates the name, merges into `.sddrc`, and reminds you to run `sdd doctor`. Flags: `--model`, `--base-url`, `--api-key-env`.
+- **`models`** hits the provider's `/models` endpoint (Anthropic / OpenAI / Ollama / vLLM). When opencode is your agentic CLI (or on `PATH`), it also lists opencode's models.
 
 ## LLM providers (multi-provider)
 
@@ -426,6 +482,8 @@ sdd-kit talks to LLMs in **two independent layers**, each separately configurabl
 - **Agentic execution** (`spec create`, `spec execute`, `arch`) → `agent_cli` + `agent_model`.
 
 Every option can be set in `.sddrc` or via env var (`.sddrc` wins): `SDD_PROVIDER`, `SDD_MODEL`, `SDD_BASE_URL`, `SDD_API_KEY_ENV`, `SDD_AGENT_CLI`, `SDD_AGENT_MODEL`.
+
+> **Easiest way:** `sdd provider set <provider> [--model …]` writes `.sddrc` for you, `sdd provider list` shows the active one, and `sdd provider models` lists what's available. See [`sdd provider`](#sdd-provider).
 
 ### Text-generation providers (`provider`)
 
@@ -572,17 +630,19 @@ sdd-kit/
 │   │   │   ├── anthropic-provider.js
 │   │   │   ├── openai-provider.js   # OpenAI / Ollama / vLLM
 │   │   │   └── cli-provider.js
-│   │   ├── spec-reader.js      # Read/parse specs from disk
+│   │   ├── spec-reader.js      # Read/parse specs + type-folder routing/resolution
+│   │   ├── cli-detect.js       # Detect claude/opencode on PATH (shared)
 │   │   ├── scanner.js          # Project directory scanner
 │   │   ├── git-changes.js      # Git diff detection for smart refresh
 │   │   └── progress.js         # Progress indicator for streaming
 │   └── commands/
-│       ├── init.js             # Init + CLAUDE.md/AGENTS.md integration + steering refresh
+│       ├── init.js             # Init + CLAUDE.md/AGENTS.md + skill file + steering refresh
 │       ├── config.js           # Show active configuration
-│       ├── doctor.js           # Validate provider / agentic CLI setup
+│       ├── doctor.js           # Validate provider / agentic CLI / skill setup
+│       ├── provider.js         # provider list / set / models
 │       ├── arch.js             # Architecture views + dashboard
 │       └── spec/
-│           ├── create.js       # Create feature specs
+│           ├── create.js       # Create feature specs (routed by name prefix)
 │           ├── document.js     # Reverse-engineer code into specs
 │           ├── execute.js      # Execute tasks from specs
 │           ├── refresh.js      # Refresh map specs

@@ -18,6 +18,7 @@ import { archiveCmd }  from './commands/spec/archive.js';
 import { archCmd }     from './commands/arch.js';
 import { configCmd }   from './commands/config.js';
 import { doctorCmd }   from './commands/doctor.js';
+import { providerListCmd, providerSetCmd, providerModelsCmd } from './commands/provider.js';
 import { setOverrides } from './core/config.js';
 
 // Apply per-command LLM overrides (--provider / --model) at highest precedence.
@@ -131,7 +132,7 @@ const program = new Command();
 program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
-  .version('0.7.0')
+  .version('0.8.0')
   .configureHelp({
     visibleCommands(cmd) {
       const cmds = [];
@@ -166,6 +167,7 @@ ${chalk.bold(t.quickStart)}
   ${chalk.cyan('sdd arch')}                                       ${chalk.dim(`→ ${t.archDashboard}`)}
   ${chalk.cyan('sdd config')}                                     ${chalk.dim(`→ ${isES ? 'ver configuración activa' : 'show active config'}`)}
   ${chalk.cyan('sdd doctor')}                                     ${chalk.dim(`→ ${isES ? 'validar proveedor/CLI activo' : 'validate provider/CLI setup'}`)}
+  ${chalk.cyan('sdd provider list')}                              ${chalk.dim(`→ ${isES ? 'elegir/configurar proveedor LLM' : 'select/configure LLM provider'}`)}
 
 ${chalk.bold(t.specLevels)}
   ${chalk.red('-1')}   ${t.level1}
@@ -375,6 +377,42 @@ program
     applyProviderFlags(opts);
     const ok = await doctorCmd();
     process.exitCode = ok ? 0 : 1;
+  });
+
+// ─── sdd provider ────────────────────────────────────────────────────────────
+
+const provider = program
+  .command('provider')
+  .description(isES ? 'Elegir y configurar el proveedor LLM' : 'Select and configure the LLM provider');
+
+provider
+  .command('list')
+  .description(isES ? 'Listar proveedores y mostrar el activo' : 'List providers and show the active one')
+  .action(() => providerListCmd());
+
+provider
+  .command('set <provider>')
+  .description(isES ? 'Fijar el proveedor en .sddrc' : 'Set the provider in .sddrc')
+  .option('--model <name>', isES ? 'Modelo a usar' : 'Model to use')
+  .option('--base-url <url>', isES ? 'Endpoint OpenAI-compatible' : 'OpenAI-compatible endpoint')
+  .option('--api-key-env <name>', isES ? 'Nombre de la env var con la API key' : 'Env var name holding the API key')
+  .addHelpText('after', `
+${chalk.bold(t.examples)}
+  sdd provider set anthropic --model claude-sonnet-4-6
+  sdd provider set openai --model gpt-4o
+  sdd provider set ollama --model llama3.1
+  sdd provider set vllm --model meta-llama/Llama-3.1-8B-Instruct --base-url http://localhost:8000/v1
+  `)
+  .action((providerName, opts) => {
+    providerSetCmd({ provider: providerName, model: opts.model, baseUrl: opts.baseUrl, apiKeyEnv: opts.apiKeyEnv });
+  });
+
+provider
+  .command('models')
+  .description(isES ? 'Listar modelos del proveedor activo' : 'List models from the active provider')
+  .option('--provider <name>', isES ? 'Consultar un proveedor específico' : 'Query a specific provider')
+  .action(async (opts) => {
+    await providerModelsCmd({ provider: opts.provider });
   });
 
 program.parse();

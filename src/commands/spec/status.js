@@ -10,7 +10,7 @@ export async function statusCmd({ specName, verbose, cwd = process.cwd() }) {
     const spec = readSpec(cwd, specName);
     if (!spec) {
       console.error(chalk.red(`\n  Spec not found: ${specName}`));
-      console.log(chalk.dim(`  Expected: specs/features/${specName}/tasks.md\n`));
+      console.log(chalk.dim(`  Run \`sdd spec list\` to see available specs.\n`));
       return;
     }
     console.log(`\n${chalk.bold('sdd spec status')} — ${chalk.cyan(specName)}\n`);

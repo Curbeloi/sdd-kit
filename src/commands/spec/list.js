@@ -6,7 +6,6 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import { readAllSpecs } from '../../core/spec-reader.js';
-import { getConfig } from '../../core/config.js';
 
 export function listCmd({ cwd = process.cwd() } = {}) {
   console.log(`\n${chalk.bold('sdd spec list')}\n`);
@@ -17,8 +16,6 @@ export function listCmd({ cwd = process.cwd() } = {}) {
     console.log(chalk.dim('  No specs found. Create one with: sdd spec create "feature"\n'));
     return;
   }
-
-  const config = getConfig(cwd);
 
   for (const spec of specs) {
     const hasR = spec.files.requirements ? chalk.green('R') : chalk.dim('-');
@@ -33,17 +30,19 @@ export function listCmd({ cwd = process.cwd() } = {}) {
     else if (done === total) status = chalk.green('done');
     else status = chalk.yellow(`${done}/${total}`);
 
-    // Get creation date from directory stat
-    const specDir = path.join(cwd, config.specsDir, spec.name);
+    // Creation date from the spec's own directory.
     let dateStr = '';
     try {
-      const stat = fs.statSync(specDir);
-      dateStr = stat.birthtime.toISOString().slice(0, 10);
+      dateStr = fs.statSync(spec.dir).birthtime.toISOString().slice(0, 10);
     } catch {
       dateStr = '';
     }
 
-    console.log(`  ${chalk.cyan(spec.name.padEnd(30))} ${hasR}${hasD}${hasT}  ${status.padEnd(20)} ${chalk.dim(dateStr)}`);
+    // Show the type folder when it isn't the default `features`.
+    const type = path.basename(path.dirname(spec.dir));
+    const typeTag = type === 'features' ? '' : chalk.dim(` [${type}]`);
+
+    console.log(`  ${chalk.cyan(spec.name.padEnd(30))} ${hasR}${hasD}${hasT}  ${status.padEnd(20)} ${chalk.dim(dateStr)}${typeTag}`);
   }
 
   console.log('');

@@ -5,22 +5,22 @@
 import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
-import { getConfig } from '../../core/config.js';
+import { resolveSpecDir } from '../../core/spec-reader.js';
 
 export function renameCmd({ oldName, newName, cwd = process.cwd() }) {
-  const config = getConfig(cwd);
-  const oldDir = path.join(cwd, config.specsDir, oldName);
-  const newDir = path.join(cwd, config.specsDir, newName);
+  const oldDir = resolveSpecDir(cwd, oldName);
 
-  if (!fs.existsSync(oldDir)) {
-    console.error(chalk.red(`\n  Spec not found: ${oldName}`));
-    console.log(chalk.dim(`  Expected: ${config.specsDir}/${oldName}/\n`));
+  if (!oldDir) {
+    console.error(chalk.red(`\n  Spec not found: ${oldName}\n`));
     return;
   }
 
+  // Rename in place — keep the spec inside its current type folder.
+  const newDir = path.join(path.dirname(oldDir), newName);
+
   if (fs.existsSync(newDir)) {
     console.error(chalk.red(`\n  Destination already exists: ${newName}`));
-    console.log(chalk.dim(`  Path: ${config.specsDir}/${newName}/\n`));
+    console.log(chalk.dim(`  Path: ${path.relative(cwd, newDir)}/\n`));
     return;
   }
 
@@ -39,7 +39,7 @@ export function renameCmd({ oldName, newName, cwd = process.cwd() }) {
   }
 
   console.log(`\n${chalk.bold('sdd spec rename')} — ${chalk.dim(oldName)} → ${chalk.cyan(newName)}`);
-  console.log(chalk.green(`  Renamed ${config.specsDir}/${oldName}/ → ${newName}/`));
+  console.log(chalk.green(`  Renamed → ${path.relative(cwd, newDir)}/`));
   if (updated > 0) console.log(chalk.dim(`  Updated ${updated} file header(s)`));
   console.log('');
 }

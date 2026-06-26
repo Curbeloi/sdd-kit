@@ -20,6 +20,10 @@ const LABELS = {
   'claude-cli': 'Claude Code CLI',
 };
 
+// Human-readable provider labels and the supported set (for `sdd provider`).
+export const PROVIDER_LABELS = LABELS;
+export const SUPPORTED_PROVIDERS = Object.keys(LABELS);
+
 /**
  * Decide which provider to use given config + environment.
  * @returns {'anthropic'|'openai'|'ollama'|'vllm'|'claude-cli'}

@@ -10,11 +10,12 @@ import ora from 'ora';
 import { readModuleSpecs, readAllSpecs } from '../core/spec-reader.js';
 import { askClaude, batchAsk, detectEngine, getEngineName } from '../core/claude-api.js';
 import { debugLog, warnLog } from '../core/log.js';
+import { cliAvailable } from '../core/cli-detect.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dirname, '../../templates/steering');
 
-export async function initCmd({ auto = false, cwd = process.cwd() } = {}) {
+export async function initCmd({ auto = false, cwd = process.cwd(), detect } = {}) {
   console.log(`\n${chalk.bold('sdd init')} — Setting up SDD in this project\n`);
 
   const steeringDir = path.join(cwd, '.claude', 'steering');
@@ -29,11 +30,22 @@ export async function initCmd({ auto = false, cwd = process.cwd() } = {}) {
     scaffoldTemplates(steeringDir);
   }
 
-  // Ensure CLAUDE.md references the SDD documentation (also opencode's fallback).
+  // Detect the agentic CLIs once; instruction- and skill-file placement key off it.
+  const env = detect || {
+    claude: await cliAvailable('claude'),
+    opencode: await cliAvailable('opencode'),
+  };
+
+  // CLAUDE.md — universal instruction file (Claude Code's primary, opencode's fallback).
   ensureClaudeMd(cwd);
 
-  // If the project uses opencode's AGENTS.md, mirror the SDD block there too.
-  ensureAgentsMd(cwd);
+  // AGENTS.md — opencode's primary instruction file. Create it when opencode is
+  // detected so the SDD block lives where opencode actually reads it; always keep
+  // an existing one in sync.
+  ensureAgentsMd(cwd, env);
+
+  // Drop the SDD skill file where the detected agentic CLI will discover it.
+  await ensureSkillFile(cwd, env);
 
   // Add .sdd/ to .gitignore so the hash cache doesn't get committed
   ensureGitignore(cwd);
@@ -243,11 +255,132 @@ function ensureClaudeMd(cwd) {
   upsertSddBlock(path.join(cwd, 'CLAUDE.md'), 'CLAUDE.md', { create: true, heading: '# CLAUDE.md' });
 }
 
-function ensureAgentsMd(cwd) {
+function ensureAgentsMd(cwd, { opencode = false } = {}) {
   // AGENTS.md is opencode's primary instruction file (it ignores CLAUDE.md when
-  // AGENTS.md exists). Only mirror the SDD block into it when the project
-  // already uses one — don't create AGENTS.md for projects that don't.
-  upsertSddBlock(path.join(cwd, 'AGENTS.md'), 'AGENTS.md', { create: false });
+  // AGENTS.md exists). Create it when opencode is detected so the SDD block lives
+  // in the file opencode actually reads; always keep an existing one in sync.
+  const exists = fs.existsSync(path.join(cwd, 'AGENTS.md'));
+  upsertSddBlock(path.join(cwd, 'AGENTS.md'), 'AGENTS.md', { create: opencode || exists, heading: '# AGENTS.md' });
+}
+
+// ─── SDD skill file ───────────────────────────────────────────────────────
+
+// Where each agentic CLI discovers a skill. Claude Code requires the uppercase
+// `SKILL.md` filename under `.claude/skills/<name>/`; opencode (and the generic
+// fallback) use a top-level `skills/<name>/`.
+export const CLAUDE_SKILL_PATH = '.claude/skills/sdd/SKILL.md';
+export const GENERIC_SKILL_PATH = 'skills/sdd/SKILL.md';
+
+/**
+ * Relative SKILL.md path the given agentic CLI looks for.
+ * @param {string} agentCmd - 'claude' | 'opencode' | ...
+ * @returns {string}
+ */
+export function skillFileFor(agentCmd) {
+  return agentCmd === 'claude' ? CLAUDE_SKILL_PATH : GENERIC_SKILL_PATH;
+}
+
+/**
+ * Decide which skill file(s) to create from detected CLIs. Pure for testing.
+ *   claude            → .claude/skills/sdd/SKILL.md
+ *   opencode          → skills/sdd/SKILL.md
+ *   both              → both
+ *   neither           → skills/sdd/SKILL.md (generic fallback)
+ * @param {{claude: boolean, opencode: boolean}} detected
+ * @returns {string[]} relative paths (deduped)
+ */
+export function skillTargets({ claude, opencode }) {
+  const targets = [];
+  if (claude) targets.push(CLAUDE_SKILL_PATH);
+  if (opencode) targets.push(GENERIC_SKILL_PATH);
+  if (!claude && !opencode) targets.push(GENERIC_SKILL_PATH);
+  return [...new Set(targets)];
+}
+
+const SDD_SKILL_CONTENT = `---
+name: sdd
+description: Spec-Driven Development with sdd-kit. Use when planning a feature, fixing a bug, or implementing any change — a spec in specs/ must exist before code.
+---
+
+# sdd-kit — Spec-Driven Development
+
+The spec is the source of truth; code is its expression. **Never plan or write code
+without a spec.** If none exists for the task, create one first at the right size.
+
+## Workflow
+
+\`\`\`bash
+# 1. New work — pick the size:
+sdd spec create "clear description" -1   # bug fix / tweak  → tasks.md
+sdd spec create "clear description"      # feature (default) → requirements + tasks
+sdd spec create "clear description" -3   # complex / new arch → + design.md
+
+# 2. Review the generated spec with the user before executing.
+
+# 3. Execute tasks:
+sdd spec execute <spec-name>             # next pending task
+sdd spec execute <spec-name> --task 1.2  # specific task
+sdd spec execute <spec-name> --dry-run   # preview only
+
+# 4. Keep docs alive after structural changes:
+sdd spec refresh                         # update the module map
+sdd arch                                 # rebuild architecture views
+\`\`\`
+
+## Spec sizes
+
+| Flag | Files | When |
+|------|-------|------|
+| \`-1\` | tasks.md | bug fix, tweak, small refactor |
+| \`-2\` (default) | requirements.md + tasks.md | clear feature (1–3 days) |
+| \`-3\` | requirements.md + design.md + tasks.md | complex feature, new architecture |
+
+## Spec name & type
+
+The "type" is the prefix you pass to \`--name\` (free-form): \`feat-\`, \`fix-\`, \`bug-\`,
+\`chore-\`, \`refactor-\`, \`docs-\`, \`perf-\`. Without \`--name\`, the name is auto-derived
+and prefixed \`feat-\`.
+
+## Structure
+
+- \`.claude/steering/\` — project context (product, tech, structure)
+- \`specs/features/\` (and sibling type folders) — feature specs
+- \`specs/_map/\` — auto-generated module map
+- \`specs/_arch/\` — architecture views
+
+## Rules
+
+1. No spec, no code — create the spec first, at the right size.
+2. Show the spec to the user before \`sdd spec execute\`.
+3. A bug fix doesn't need \`design.md\`; a new architecture does.
+4. Read relevant specs in \`specs/\` before implementing.
+5. The spec wins — if chat and spec conflict, update the spec first.
+6. Completed tasks are auto-marked in \`tasks.md\`.
+
+Reference: https://github.com/Curbeloi/sdd-kit
+`;
+
+/**
+ * Create the SDD skill file where the active agentic CLI (claude / opencode) will
+ * discover it. Idempotent — existing files are skipped, never overwritten.
+ */
+export async function ensureSkillFile(cwd, detected) {
+  const { claude, opencode } = detected || {
+    claude: await cliAvailable('claude'),
+    opencode: await cliAvailable('opencode'),
+  };
+  const targets = skillTargets({ claude, opencode });
+
+  for (const rel of targets) {
+    const fp = path.join(cwd, rel);
+    if (fs.existsSync(fp)) {
+      console.log(chalk.dim(`  skip  ${rel} (already exists)`));
+      continue;
+    }
+    fs.mkdirSync(path.dirname(fp), { recursive: true });
+    fs.writeFileSync(fp, SDD_SKILL_CONTENT, 'utf-8');
+    console.log(chalk.green(`  created  ${rel}`));
+  }
 }
 
 /**

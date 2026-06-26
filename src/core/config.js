@@ -140,3 +140,32 @@ export function setOverrides(overrides = {}) {
 export function getDefaults() {
   return { ...DEFAULTS };
 }
+
+/**
+ * Merge `updates` into the project's `.sddrc` (creating it if absent) and
+ * persist as pretty-printed JSON. Empty-string/null/undefined values are
+ * dropped (so callers can "unset" a key by passing ''). Only the provided keys
+ * change — everything else in `.sddrc` is preserved. Invalidates the cache.
+ *
+ * @param {string} cwd
+ * @param {Record<string, any>} updates - snake_case config keys
+ * @returns {Record<string, any>} the merged object that was written
+ */
+export function writeRc(cwd, updates = {}) {
+  const rcPath = path.join(cwd, '.sddrc');
+  let current = {};
+  if (fs.existsSync(rcPath)) {
+    try { current = JSON.parse(fs.readFileSync(rcPath, 'utf-8')); }
+    catch { current = {}; }
+  }
+
+  const merged = { ...current };
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === '' || value === null || value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+
+  fs.writeFileSync(rcPath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+  resetConfig();
+  return merged;
+}
