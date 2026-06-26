@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
-import { getConfig, resetConfig, getDefaults, setOverrides } from './config.js';
+import { getConfig, resetConfig, getDefaults, setOverrides, writeRc } from './config.js';
 import { withTempDir } from '../test-helpers.js';
 
 beforeEach(() => {
@@ -178,6 +178,37 @@ describe('LLM provider config', () => {
       const config = getConfig(dir);
       assert.equal(config.provider, 'auto');
       restore();
+    });
+  });
+});
+
+describe('writeRc', () => {
+  beforeEach(() => resetConfig());
+
+  it('creates .sddrc and returns the merged object', async () => {
+    await withTempDir((dir) => {
+      const merged = writeRc(dir, { provider: 'openai', model: 'gpt-4o' });
+      assert.deepEqual(merged, { provider: 'openai', model: 'gpt-4o' });
+      const onDisk = JSON.parse(fs.readFileSync(path.join(dir, '.sddrc'), 'utf-8'));
+      assert.deepEqual(onDisk, { provider: 'openai', model: 'gpt-4o' });
+    });
+  });
+
+  it('preserves existing keys and drops empty values', async () => {
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'), JSON.stringify({ concurrency: 2, model: 'old' }), 'utf-8');
+      const merged = writeRc(dir, { provider: 'ollama', model: '' });
+      assert.equal(merged.concurrency, 2);    // untouched
+      assert.equal(merged.provider, 'ollama'); // added
+      assert.equal('model' in merged, false);  // dropped (empty string)
+    });
+  });
+
+  it('survives an invalid existing .sddrc by starting fresh', async () => {
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'), 'not json {', 'utf-8');
+      const merged = writeRc(dir, { provider: 'vllm' });
+      assert.deepEqual(merged, { provider: 'vllm' });
     });
   });
 });
