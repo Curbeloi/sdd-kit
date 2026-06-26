@@ -217,6 +217,20 @@ sdd spec create "Hybrid RAG search pipeline" -3
 sdd spec create "WhatsApp webhook integration" --name feat-whatsapp-hooks
 ```
 
+**Spec name & "type".** sdd-kit models the **size** of a change (`-1`/`-2`/`-3`) — it does *not* enforce a fixed set of types. The "type" is simply the **prefix you choose in `--name`**, and it's free-form: `feat-`, `fix-`, `bug-`, `chore-`, `refactor-`, `docs-`, `perf-`, whatever your team uses.
+
+- With `--name`, the name is used **verbatim** — pick any prefix.
+- Without `--name`, the name is auto-generated from the description and **always prefixed `feat-`** (even for a bug fix).
+
+```bash
+sdd spec create "Fix 422 on login"    -1 --name fix-login-422     # bug fix
+sdd spec create "Bump dependencies"    -1 --name chore-deps        # chore
+sdd spec create "Refactor auth module" -2 --name refactor-auth     # refactor
+sdd spec create "Add JWT auth"                                     # → feat-add-jwt-auth (auto)
+```
+
+> Tip: choose the **size flag** for ceremony (`-1` bug fix → `-3` architecture) and the **`--name` prefix** for type. Use `--name` whenever you want anything other than `feat-`.
+
 ### `sdd spec status [spec-name]`
 
 Shows project progress with visual indicators.
