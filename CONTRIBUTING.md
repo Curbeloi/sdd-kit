@@ -136,10 +136,10 @@ git clone https://github.com/<your-username>/sdd-kit.git
 cd sdd-kit
 
 # 3. Install dependencies
-npm install
+pnpm install
 
 # 4. Link the CLI locally for testing
-npm link
+pnpm link --global
 
 # 5. Verify it works
 sdd --version
@@ -149,7 +149,7 @@ sdd --version
 
 ```bash
 # Run all tests
-npm test
+pnpm test
 
 # Run a specific test file
 node --test src/path/to/file.test.js
@@ -220,7 +220,7 @@ We welcome translations of docs and CLI messages. Open an issue to coordinate.
 
 6. **Run the full test suite** and ensure all tests pass:
    ```bash
-   npm test
+   pnpm test
    ```
 
 7. **Add your spec file** to the `specs/` directory

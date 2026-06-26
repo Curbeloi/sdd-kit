@@ -444,13 +444,13 @@ sdd-kit/
 # Clone and install
 git clone https://github.com/icurbe/sdd-kit.git
 cd sdd-kit
-npm install
+pnpm install
 
 # Run locally
 node bin/sdd.js --help
 
 # Link for global testing
-npm link
+pnpm link --global
 sdd --help
 ```
 
