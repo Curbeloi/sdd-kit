@@ -7,20 +7,102 @@ import fs from 'fs';
 import path from 'path';
 import { getConfig } from './config.js';
 
-export function readAllSpecs(cwd) {
-  const specsPath = path.join(cwd, getConfig(cwd).specsDir);
-  if (!fs.existsSync(specsPath)) return [];
+// Name-prefix → spec-type subdirectory (siblings under the specs root).
+// `feat-*` maps to `features`, preserving the original single-folder layout.
+export const SPEC_TYPE_DIRS = {
+  feat: 'features', feature: 'features',
+  fix: 'bugfix', bug: 'bugfix', bugfix: 'bugfix',
+  hotfix: 'hotfix',
+  chore: 'chore',
+  refactor: 'refactor',
+  docs: 'docs', doc: 'docs',
+  perf: 'perf',
+  test: 'test',
+};
 
-  return fs.readdirSync(specsPath, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => readSpec(cwd, d.name))
-    .filter(Boolean);
+const RESERVED_SPEC_DIRS = new Set(['_map', '_arch', 'archived']);
+const SPEC_FILES = ['requirements.md', 'design.md', 'tasks.md'];
+
+/**
+ * Absolute paths of the spec-type directories that currently exist under the
+ * specs root (the parent of `specsDir`, e.g. `specs/` for `specs/features`).
+ * Reserved dirs (`_map`, `_arch`, `archived`, any `_*`) are skipped. Falls back
+ * to a single directory (old behavior) when `specsDir` has no parent.
+ * @param {string} cwd
+ * @returns {string[]}
+ */
+export function specTypeDirs(cwd) {
+  const { specsDir } = getConfig(cwd);
+  const root = path.dirname(specsDir);
+  if (!root || root === '.') return [path.join(cwd, specsDir)];
+
+  const rootAbs = path.join(cwd, root);
+  if (!fs.existsSync(rootAbs)) return [path.join(cwd, specsDir)];
+
+  return fs.readdirSync(rootAbs, { withFileTypes: true })
+    .filter(d => d.isDirectory() && !d.name.startsWith('_') && !RESERVED_SPEC_DIRS.has(d.name))
+    .map(d => path.join(rootAbs, d.name));
+}
+
+/**
+ * Destination directory for a NEW spec, routed by its name prefix. `feat-*`
+ * (and unknown prefixes) resolve to the unchanged `specsDir`; `fix-`/`bug-` →
+ * `bugfix/`, `chore-` → `chore/`, etc.
+ * @param {string} cwd
+ * @param {string} specName
+ * @returns {string} absolute path
+ */
+export function specDestDir(cwd, specName) {
+  const { specsDir } = getConfig(cwd);
+  const root = path.dirname(specsDir);
+  const prefix = String(specName).split('-')[0].toLowerCase();
+  const sub = SPEC_TYPE_DIRS[prefix];
+  if (!root || root === '.' || !sub) return path.join(cwd, specsDir, specName);
+  return path.join(cwd, root, sub, specName);
+}
+
+/**
+ * Find an existing spec directory by name across all type dirs.
+ * @param {string} cwd
+ * @param {string} specName
+ * @returns {string|null} absolute path, or null if not found
+ */
+export function resolveSpecDir(cwd, specName) {
+  for (const typeDir of specTypeDirs(cwd)) {
+    const candidate = path.join(typeDir, specName);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+export function readAllSpecs(cwd) {
+  const specs = [];
+  const seen = new Set();
+  for (const typeDir of specTypeDirs(cwd)) {
+    if (!fs.existsSync(typeDir)) continue;
+    for (const d of fs.readdirSync(typeDir, { withFileTypes: true })) {
+      if (!d.isDirectory()) continue;
+      const dir = path.join(typeDir, d.name);
+      // A directory counts as a spec only if it holds at least one spec file.
+      if (!SPEC_FILES.some(f => fs.existsSync(path.join(dir, f)))) continue;
+      if (seen.has(d.name)) continue; // first type dir wins on a name collision
+      seen.add(d.name);
+      specs.push(readSpecAt(d.name, dir));
+    }
+  }
+  return specs;
 }
 
 export function readSpec(cwd, specName) {
-  const dir = path.join(cwd, getConfig(cwd).specsDir, specName);
-  if (!fs.existsSync(dir)) return null;
+  const dir = resolveSpecDir(cwd, specName);
+  if (!dir) return null;
+  return readSpecAt(specName, dir);
+}
 
+/**
+ * Read a spec from a known absolute directory. Shape: { name, dir, files, tasks, tasksContent }.
+ */
+function readSpecAt(specName, dir) {
   const files = {};
   for (const f of ['requirements.md', 'design.md']) {
     const fp = path.join(dir, f);
