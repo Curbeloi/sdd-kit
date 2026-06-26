@@ -1,6 +1,6 @@
 # sdd-kit
 
-**Spec-Driven Development for [Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — language-agnostic, works with any project.
+**Spec-Driven Development for Claude Code** — language-agnostic, works with any project.
 
 The biggest engineering orgs (Amazon's six-pagers, Google's design docs, Stripe's RFCs) have always written specs before code. `sdd-kit` brings that discipline to Claude Code — structured specs in, quality code out.
 
@@ -14,7 +14,7 @@ You describe what to build  →  sdd-kit structures the spec  →  Claude Code e
 
 ## Requirements
 
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** — the execution engine. Install: `npm install -g @anthropic-ai/claude-code`
+- **Claude Code** — the execution engine. Install: `npm install -g @anthropic-ai/claude-code`
 - **Node.js >= 18**
 - Optional: `ANTHROPIC_API_KEY` env var for faster SDK mode (bypasses Claude Code CLI for spec generation)
 
@@ -350,7 +350,7 @@ Available options: `specs_dir`, `modules_dir`, `steering_dir`, `arch_dir`, `conc
 
 ## Built for Claude Code
 
-sdd-kit is designed specifically for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Every command leverages Claude Code's full project understanding — it reads your files, follows your CLAUDE.md conventions, and writes code that fits your codebase.
+sdd-kit is designed specifically for Claude Code. Every command leverages Claude Code's full project understanding — it reads your files, follows your CLAUDE.md conventions, and writes code that fits your codebase.
 
 | Mode | When | What happens |
 |------|------|-------------|
