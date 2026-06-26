@@ -29,8 +29,11 @@ export async function initCmd({ auto = false, cwd = process.cwd() } = {}) {
     scaffoldTemplates(steeringDir);
   }
 
-  // Ensure CLAUDE.md references the SDD documentation
+  // Ensure CLAUDE.md references the SDD documentation (also opencode's fallback).
   ensureClaudeMd(cwd);
+
+  // If the project uses opencode's AGENTS.md, mirror the SDD block there too.
+  ensureAgentsMd(cwd);
 
   // Add .sdd/ to .gitignore so the hash cache doesn't get committed
   ensureGitignore(cwd);
@@ -209,27 +212,42 @@ This project uses [sdd-kit](https://github.com/Curbeloi/sdd-kit). Specs drive co
 - Completed tasks are auto-marked in \`tasks.md\`.
 ${SDD_SECTION_END}`;
 
-function ensureClaudeMd(cwd) {
-  const claudeMdPath = path.join(cwd, 'CLAUDE.md');
-
-  if (fs.existsSync(claudeMdPath)) {
-    const content = fs.readFileSync(claudeMdPath, 'utf-8');
+/**
+ * Insert or update the SDD block in an instruction file.
+ * @param {string} filePath
+ * @param {string} label - display name for log lines
+ * @param {object} opts
+ * @param {boolean} opts.create - create the file (with `heading`) when missing
+ * @param {string} opts.heading - H1 used when creating the file
+ */
+function upsertSddBlock(filePath, label, { create, heading }) {
+  if (fs.existsSync(filePath)) {
+    const content = fs.readFileSync(filePath, 'utf-8');
     if (content.includes(SDD_SECTION_MARKER)) {
-      // Already has SDD section — update it
       const regex = new RegExp(`${SDD_SECTION_MARKER}[\\s\\S]*?${SDD_SECTION_END}`);
-      const updated = content.replace(regex, SDD_BLOCK);
-      fs.writeFileSync(claudeMdPath, updated, 'utf-8');
-      console.log(chalk.dim('  updated  CLAUDE.md (SDD section)'));
+      fs.writeFileSync(filePath, content.replace(regex, SDD_BLOCK), 'utf-8');
+      console.log(chalk.dim(`  updated  ${label} (SDD section)`));
     } else {
-      // Append SDD section
-      fs.writeFileSync(claudeMdPath, content.trimEnd() + '\n\n' + SDD_BLOCK + '\n', 'utf-8');
-      console.log(chalk.green('  updated  CLAUDE.md (added SDD section)'));
+      fs.writeFileSync(filePath, content.trimEnd() + '\n\n' + SDD_BLOCK + '\n', 'utf-8');
+      console.log(chalk.green(`  updated  ${label} (added SDD section)`));
     }
-  } else {
-    // Create CLAUDE.md with SDD section
-    fs.writeFileSync(claudeMdPath, '# CLAUDE.md\n\n' + SDD_BLOCK + '\n', 'utf-8');
-    console.log(chalk.green('  created  CLAUDE.md'));
+  } else if (create) {
+    fs.writeFileSync(filePath, `${heading}\n\n` + SDD_BLOCK + '\n', 'utf-8');
+    console.log(chalk.green(`  created  ${label}`));
   }
+}
+
+function ensureClaudeMd(cwd) {
+  // CLAUDE.md is the Claude Code entry point; opencode reads it as a fallback
+  // when no AGENTS.md exists. Always ensure it.
+  upsertSddBlock(path.join(cwd, 'CLAUDE.md'), 'CLAUDE.md', { create: true, heading: '# CLAUDE.md' });
+}
+
+function ensureAgentsMd(cwd) {
+  // AGENTS.md is opencode's primary instruction file (it ignores CLAUDE.md when
+  // AGENTS.md exists). Only mirror the SDD block into it when the project
+  // already uses one — don't create AGENTS.md for projects that don't.
+  upsertSddBlock(path.join(cwd, 'AGENTS.md'), 'AGENTS.md', { create: false });
 }
 
 /**
