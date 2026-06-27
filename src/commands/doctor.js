@@ -12,7 +12,7 @@ import { getConfig } from '../core/config.js';
 import { resolveProviderName } from '../core/providers/index.js';
 import { OPENAI_COMPATIBLE, ANTHROPIC_DEFAULT_MODEL } from '../core/providers/provider.js';
 import { cliAvailable } from '../core/cli-detect.js';
-import { skillFileFor } from './init.js';
+import { CLAUDE_SKILL_PATH, SDD_SKILL_PATH } from './init.js';
 
 async function endpointReachable(baseURL) {
   if (typeof fetch !== 'function') return null; // can't check on this runtime
@@ -89,12 +89,13 @@ export async function doctorCmd({ cwd = process.cwd() } = {}) {
     hint: agentCmd === 'opencode' ? 'install opencode, or set agent_cli=claude' : 'install Claude Code, or commands fall back to --prompt-only',
   });
 
-  // SDD skill file discoverable by the active agentic CLI.
-  const skillRel = skillFileFor(agentCmd);
+  // SDD skill file present in either layout (.claude/skills/ or sdd/).
+  const claudeSkill = fs.existsSync(path.join(cwd, CLAUDE_SKILL_PATH));
+  const sddSkill = fs.existsSync(path.join(cwd, SDD_SKILL_PATH));
   checks.push({
-    ok: fs.existsSync(path.join(cwd, skillRel)),
+    ok: claudeSkill || sddSkill,
     label: 'SDD skill file present',
-    detail: skillRel,
+    detail: claudeSkill ? CLAUDE_SKILL_PATH : sddSkill ? SDD_SKILL_PATH : `${CLAUDE_SKILL_PATH} or ${SDD_SKILL_PATH}`,
     hint: 'run `sdd init` to create it',
   });
 

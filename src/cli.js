@@ -132,7 +132,7 @@ const program = new Command();
 program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
-  .version('0.8.0')
+  .version('0.8.1')
   .configureHelp({
     visibleCommands(cmd) {
       const cmds = [];
@@ -411,8 +411,9 @@ provider
   .command('models')
   .description(isES ? 'Listar modelos del proveedor activo' : 'List models from the active provider')
   .option('--provider <name>', isES ? 'Consultar un proveedor específico' : 'Query a specific provider')
+  .option('--refresh', isES ? 'Refrescar el caché de modelos de opencode' : "Refresh opencode's model cache")
   .action(async (opts) => {
-    await providerModelsCmd({ provider: opts.provider });
+    await providerModelsCmd({ provider: opts.provider, refresh: opts.refresh });
   });
 
 program.parse();
