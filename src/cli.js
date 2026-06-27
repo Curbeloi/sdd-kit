@@ -132,7 +132,7 @@ const program = new Command();
 program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
-  .version('0.8.1')
+  .version('0.9.0')
   .configureHelp({
     visibleCommands(cmd) {
       const cmds = [];
