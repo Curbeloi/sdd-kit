@@ -11,6 +11,7 @@ import { readModuleSpecs, readAllSpecs } from '../core/spec-reader.js';
 import { askClaude, batchAsk, detectEngine, getEngineName } from '../core/claude-api.js';
 import { debugLog, warnLog } from '../core/log.js';
 import { cliAvailable } from '../core/cli-detect.js';
+import { getConfig, getDefaults, writeRc } from '../core/config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dirname, '../../templates/steering');
@@ -18,23 +19,37 @@ const TEMPLATES_DIR = path.join(__dirname, '../../templates/steering');
 export async function initCmd({ auto = false, cwd = process.cwd(), detect } = {}) {
   console.log(`\n${chalk.bold('sdd init')} — Setting up SDD in this project\n`);
 
-  const steeringDir = path.join(cwd, '.claude', 'steering');
+  // Detect the agentic CLIs once; file placement keys off it.
+  const env = detect || {
+    claude: await cliAvailable('claude'),
+    opencode: await cliAvailable('opencode'),
+  };
+
+  // Resolve where steering + skill live. `.claude/` is used only when Claude Code
+  // is installed; otherwise everything goes under a root `sdd/` folder. A user-set
+  // steering_dir in .sddrc always wins; a non-default choice is persisted so later
+  // refresh/read operations use the same location.
+  const layout = sddLayout(env);
+  const config = getConfig(cwd);
+  let steeringRel;
+  if (config._sources.steering_dir === '.sddrc') {
+    steeringRel = config.steeringDir;
+  } else {
+    steeringRel = layout.steeringDir;
+    if (steeringRel !== getDefaults().steering_dir) writeRc(cwd, { steering_dir: steeringRel });
+  }
+
+  const steeringDir = path.join(cwd, steeringRel);
   const specsDir = path.join(cwd, 'specs', 'features');
 
   fs.mkdirSync(steeringDir, { recursive: true });
   fs.mkdirSync(specsDir, { recursive: true });
 
   if (auto) {
-    await autoGenerate(steeringDir, cwd);
+    await autoGenerate(steeringDir, cwd, steeringRel);
   } else {
-    scaffoldTemplates(steeringDir);
+    scaffoldTemplates(steeringDir, steeringRel);
   }
-
-  // Detect the agentic CLIs once; instruction- and skill-file placement key off it.
-  const env = detect || {
-    claude: await cliAvailable('claude'),
-    opencode: await cliAvailable('opencode'),
-  };
 
   // CLAUDE.md — universal instruction file (Claude Code's primary, opencode's fallback).
   ensureClaudeMd(cwd);
@@ -44,7 +59,7 @@ export async function initCmd({ auto = false, cwd = process.cwd(), detect } = {}
   // an existing one in sync.
   ensureAgentsMd(cwd, env);
 
-  // Drop the SDD skill file where the detected agentic CLI will discover it.
+  // SDD skill file — under .claude/skills/ with Claude Code, else sdd/SKILL.md.
   await ensureSkillFile(cwd, env);
 
   // Add .sdd/ to .gitignore so the hash cache doesn't get committed
@@ -72,7 +87,7 @@ function ensureGitignore(cwd) {
   console.log(chalk.dim('  updated  .gitignore (added .sdd/)'));
 }
 
-function scaffoldTemplates(steeringDir) {
+function scaffoldTemplates(steeringDir, label = '.claude/steering') {
   let created = 0;
   for (const file of ['product.md', 'tech.md', 'structure.md']) {
     const dest = path.join(steeringDir, file);
@@ -87,20 +102,20 @@ function scaffoldTemplates(steeringDir) {
     }
     const template = fs.readFileSync(templatePath, 'utf-8');
     fs.writeFileSync(dest, template, 'utf-8');
-    console.log(chalk.green(`  created  .claude/steering/${file}`));
+    console.log(chalk.green(`  created  ${label}/${file}`));
     created++;
   }
 
   if (created > 0) {
     console.log(`\n${chalk.bold('Next steps:')}`);
-    console.log(chalk.cyan('  1. Edit .claude/steering/*.md with your project info'));
+    console.log(chalk.cyan(`  1. Edit ${label}/*.md with your project info`));
     console.log(chalk.cyan('  2. Run: sdd spec create "your first feature"'));
   } else {
     console.log(chalk.dim('  All steering files already exist. Ready to go.'));
   }
 }
 
-async function autoGenerate(steeringDir, cwd) {
+async function autoGenerate(steeringDir, cwd, dirLabel = '.claude/steering') {
   const moduleSpecs = readModuleSpecs(cwd);
   const moduleCount = Object.keys(moduleSpecs).length;
 
@@ -187,11 +202,11 @@ Return ONLY the markdown content.`,
         return;
       }
       fs.writeFileSync(path.join(steeringDir, label), content, 'utf-8');
-      spinner.succeed(`  ${chalk.green('created')}  .claude/steering/${label}`);
+      spinner.succeed(`  ${chalk.green('created')}  ${dirLabel}/${label}`);
     },
   });
 
-  console.log(`\n${chalk.dim('  Review and edit .claude/steering/*.md as needed.')}`);
+  console.log(`\n${chalk.dim(`  Review and edit ${dirLabel}/*.md as needed.`)}`);
 }
 
 // ─── CLAUDE.md integration ───────────────────────────────────────────────
@@ -263,38 +278,26 @@ function ensureAgentsMd(cwd, { opencode = false } = {}) {
   upsertSddBlock(path.join(cwd, 'AGENTS.md'), 'AGENTS.md', { create: opencode || exists, heading: '# AGENTS.md' });
 }
 
-// ─── SDD skill file ───────────────────────────────────────────────────────
+// ─── SDD file layout (.claude/ vs sdd/) ─────────────────────────────────────
 
-// Where each agentic CLI discovers a skill. Claude Code requires the uppercase
-// `SKILL.md` filename under `.claude/skills/<name>/`; opencode (and the generic
-// fallback) use a top-level `skills/<name>/`.
+// `.claude/` is used only when Claude Code is installed. Otherwise everything
+// lives under a single root `sdd/` folder. Claude Code requires the uppercase
+// `SKILL.md` filename under `.claude/skills/<name>/`.
+export const CLAUDE_STEERING_DIR = '.claude/steering';
+export const SDD_STEERING_DIR = 'sdd/steering';
 export const CLAUDE_SKILL_PATH = '.claude/skills/sdd/SKILL.md';
-export const GENERIC_SKILL_PATH = 'skills/sdd/SKILL.md';
+export const SDD_SKILL_PATH = 'sdd/SKILL.md';
 
 /**
- * Relative SKILL.md path the given agentic CLI looks for.
- * @param {string} agentCmd - 'claude' | 'opencode' | ...
- * @returns {string}
+ * Resolve where steering docs and the skill file live, given CLI detection.
+ * Claude Code present → `.claude/`; otherwise a root `sdd/` folder.
+ * @param {{claude?: boolean}} detected
+ * @returns {{steeringDir: string, skillFile: string}}
  */
-export function skillFileFor(agentCmd) {
-  return agentCmd === 'claude' ? CLAUDE_SKILL_PATH : GENERIC_SKILL_PATH;
-}
-
-/**
- * Decide which skill file(s) to create from detected CLIs. Pure for testing.
- *   claude            → .claude/skills/sdd/SKILL.md
- *   opencode          → skills/sdd/SKILL.md
- *   both              → both
- *   neither           → skills/sdd/SKILL.md (generic fallback)
- * @param {{claude: boolean, opencode: boolean}} detected
- * @returns {string[]} relative paths (deduped)
- */
-export function skillTargets({ claude, opencode }) {
-  const targets = [];
-  if (claude) targets.push(CLAUDE_SKILL_PATH);
-  if (opencode) targets.push(GENERIC_SKILL_PATH);
-  if (!claude && !opencode) targets.push(GENERIC_SKILL_PATH);
-  return [...new Set(targets)];
+export function sddLayout({ claude } = {}) {
+  return claude
+    ? { steeringDir: CLAUDE_STEERING_DIR, skillFile: CLAUDE_SKILL_PATH }
+    : { steeringDir: SDD_STEERING_DIR, skillFile: SDD_SKILL_PATH };
 }
 
 const SDD_SKILL_CONTENT = `---
@@ -343,7 +346,7 @@ and prefixed \`feat-\`.
 
 ## Structure
 
-- \`.claude/steering/\` — project context (product, tech, structure)
+- steering docs (\`.claude/steering/\` or \`sdd/steering/\`) — project context (product, tech, structure)
 - \`specs/features/\` (and sibling type folders) — feature specs
 - \`specs/_map/\` — auto-generated module map
 - \`specs/_arch/\` — architecture views
@@ -365,22 +368,20 @@ Reference: https://github.com/Curbeloi/sdd-kit
  * discover it. Idempotent — existing files are skipped, never overwritten.
  */
 export async function ensureSkillFile(cwd, detected) {
-  const { claude, opencode } = detected || {
+  const env = detected || {
     claude: await cliAvailable('claude'),
     opencode: await cliAvailable('opencode'),
   };
-  const targets = skillTargets({ claude, opencode });
+  const rel = sddLayout(env).skillFile;
+  const fp = path.join(cwd, rel);
 
-  for (const rel of targets) {
-    const fp = path.join(cwd, rel);
-    if (fs.existsSync(fp)) {
-      console.log(chalk.dim(`  skip  ${rel} (already exists)`));
-      continue;
-    }
-    fs.mkdirSync(path.dirname(fp), { recursive: true });
-    fs.writeFileSync(fp, SDD_SKILL_CONTENT, 'utf-8');
-    console.log(chalk.green(`  created  ${rel}`));
+  if (fs.existsSync(fp)) {
+    console.log(chalk.dim(`  skip  ${rel} (already exists)`));
+    return;
   }
+  fs.mkdirSync(path.dirname(fp), { recursive: true });
+  fs.writeFileSync(fp, SDD_SKILL_CONTENT, 'utf-8');
+  console.log(chalk.green(`  created  ${rel}`));
 }
 
 /**
@@ -389,7 +390,7 @@ export async function ensureSkillFile(cwd, detected) {
  * Single Claude call → updates all 3 files.
  */
 export async function refreshSteering({ cwd = process.cwd(), silent = false, structuralChange = false } = {}) {
-  const steeringDir = path.join(cwd, '.claude', 'steering');
+  const steeringDir = path.join(cwd, getConfig(cwd).steeringDir);
   if (!fs.existsSync(steeringDir)) return; // user hasn't initialized steering
 
   const moduleSpecs = readModuleSpecs(cwd);
@@ -455,7 +456,7 @@ Return ONLY the markdown content for each file, no explanations.`;
       }
       if (!silent) {
         const extra = structuralChange ? ' (structural changes detected)' : '';
-        console.log(chalk.dim(`  Steering docs updated (.claude/steering/)${extra}`));
+        console.log(chalk.dim(`  Steering docs updated (${getConfig(cwd).steeringDir}/)${extra}`));
       }
     }
   } catch (err) {

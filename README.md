@@ -49,7 +49,7 @@ Follow these steps in order. Each builds on the previous one.
 ### Step 1 — Install
 
 ```bash
-npm install -g sdd-kit      # or run ad-hoc with: npx sdd-kit <command>
+npm install -g sdd-kit
 ```
 
 > **Language:** sdd-kit follows your system language. Force it with `SDD_LANG=es` (Spanish) or `SDD_LANG=en` (English).
@@ -75,14 +75,16 @@ sdd provider models         # list the models your endpoint actually serves
 ### Step 3 — Initialize the project
 
 ```bash
-sdd init                    # scaffolds .claude/steering/ + specs/, updates CLAUDE.md
+sdd init                    # scaffolds steering + specs/, writes the instruction & skill files
 ```
 
-Then fill in the steering files with your project context:
+`sdd init` puts its files where your agent looks: under `.claude/` when **Claude Code** is installed, otherwise under a single root **`sdd/`** folder. Then fill in the steering files with your project context:
 
-- `.claude/steering/product.md` — what this project is (vision, users, goals)
-- `.claude/steering/tech.md` — your stack and constraints
-- `.claude/steering/structure.md` — how the code is organized
+- `…/steering/product.md` — what this project is (vision, users, goals)
+- `…/steering/tech.md` — your stack and constraints
+- `…/steering/structure.md` — how the code is organized
+
+(`…` = `.claude` with Claude Code, else `sdd`.)
 
 > **Already have a codebase?** Document it first so specs have real context, then auto-generate steering:
 > ```bash
@@ -142,11 +144,12 @@ sdd-kit creates and manages structured Markdown specs in your repo:
 ```
 your-project/
 ├── CLAUDE.md                  # Auto-updated with SDD section on `sdd init`
-├── .claude/
-│   └── steering/              # Project context (auto-refreshed)
-│       ├── product.md         # Vision, users, goals
-│       ├── tech.md            # Stack, infra, constraints
-│       └── structure.md       # Code organization, conventions
+├── .claude/                   # Only with Claude Code (else everything is under sdd/)
+│   ├── steering/              # Project context (auto-refreshed)
+│   │   ├── product.md         # Vision, users, goals
+│   │   ├── tech.md            # Stack, infra, constraints
+│   │   └── structure.md       # Code organization, conventions
+│   └── skills/sdd/SKILL.md    # SDD workflow skill
 ├── specs/
 │   ├── _map/                  # Living project map (auto-generated)
 │   │   ├── src--auth.spec.md  # One spec per directory
@@ -165,11 +168,13 @@ your-project/
 
 Everything is Markdown. Everything lives in git. No lock-in.
 
+> Without Claude Code, `sdd init` skips `.claude/` and puts steering + skill under a single root `sdd/` folder (`sdd/steering/`, `sdd/SKILL.md`); opencode also gets the workflow via `AGENTS.md`.
+
 ## Commands
 
 ### `sdd init`
 
-Scaffolds the SDD structure in your project: `.claude/steering/` template files, the `specs/` directory, and the instruction + skill files your agent reads.
+Scaffolds the SDD structure in your project: steering template files, the `specs/` directory, and the instruction + skill files your agent reads.
 
 ```bash
 # Template steering docs (manual edit)
@@ -179,7 +184,16 @@ sdd init
 sdd init --auto
 ```
 
-**Instruction file** — the SDD section is written to the file your agent reads as its source of project guidance:
+**Where files go** — `.claude/` is used **only when Claude Code is installed**; otherwise everything lives under a single root **`sdd/`** folder:
+
+| Claude Code on PATH | Steering docs | Skill file |
+|---|---|---|
+| yes | `.claude/steering/` | `.claude/skills/sdd/SKILL.md` |
+| no | `sdd/steering/` | `sdd/SKILL.md` |
+
+When the location isn't the default, `sdd init` records `steering_dir` in `.sddrc` so later refreshes/reads stay consistent. (opencode also gets the workflow via `AGENTS.md` below.)
+
+**Instruction file** — the SDD section is written to the file your agent reads as project guidance:
 
 | Detected on PATH | Instruction file |
 |------------------|------------------|
@@ -187,16 +201,7 @@ sdd init --auto
 | `opencode` | `AGENTS.md` (opencode's primary) **+** `CLAUDE.md` |
 | neither | `CLAUDE.md` |
 
-`CLAUDE.md` is always written (it's the universal baseline). `AGENTS.md` is created **only when opencode is detected** — and an existing `AGENTS.md` is always kept in sync, whichever agent you use.
-
-**Skill file** — an SDD skill is dropped where the agent discovers it automatically, so it understands sdd-kit's workflow from the first session:
-
-| Detected on PATH | Skill file |
-|------------------|------------|
-| `claude` | `.claude/skills/sdd/SKILL.md` |
-| `opencode` | `skills/sdd/SKILL.md` |
-| both | both |
-| neither | `skills/sdd/SKILL.md` (generic fallback) |
+`CLAUDE.md` is always written (universal baseline). `AGENTS.md` is created **only when opencode is detected**, and an existing `AGENTS.md` is always kept in sync.
 
 Safe to run multiple times — skips existing steering and skill files, updates the instruction-file section idempotently.
 

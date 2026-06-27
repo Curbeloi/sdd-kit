@@ -111,18 +111,20 @@ function printModels(models) {
   console.log(chalk.dim(`  ${models.length} model(s)`));
 }
 
-async function listOpencodeModels() {
+async function listOpencodeModels(refresh = false) {
+  const args = refresh ? ['models', '--refresh'] : ['models'];
   try {
-    const { stdout } = await execFileAsync('opencode', ['models'], { timeout: 10000 });
+    const { stdout } = await execFileAsync('opencode', args, { timeout: 30000 });
     const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
     if (!lines.length) { console.log(chalk.dim('    (none reported)')); return; }
     for (const l of lines.slice(0, 100)) console.log(`    ${l}`);
+    if (lines.length > 100) console.log(chalk.dim(`    … +${lines.length - 100} more`));
   } catch (err) {
     console.log(chalk.dim(`    run \`opencode models\` to list (${err.code || err.message})`));
   }
 }
 
-export async function providerModelsCmd({ provider: override, cwd = process.cwd() } = {}) {
+export async function providerModelsCmd({ provider: override, refresh = false, cwd = process.cwd() } = {}) {
   const config = getConfig(cwd);
   const providerName = override || resolveProviderName(cwd);
 
@@ -153,8 +155,8 @@ export async function providerModelsCmd({ provider: override, cwd = process.cwd(
 
   // Agentic layer: list opencode models when it's the configured CLI or present.
   if (config.agentCli === 'opencode' || await cliAvailable('opencode')) {
-    console.log(`\n${chalk.dim('  opencode (agentic CLI):')}`);
-    await listOpencodeModels();
+    console.log(`\n${chalk.dim(`  opencode (agentic CLI)${refresh ? ' — refreshing cache' : ''}:`)}`);
+    await listOpencodeModels(refresh);
   }
 
   console.log('');
