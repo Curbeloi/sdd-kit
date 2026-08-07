@@ -18,6 +18,7 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
   if (!spec) {
     console.error(chalk.red(`\n  Spec not found: ${specName}`));
     console.log(chalk.dim(`  Run \`sdd spec list\` to see available specs.\n`));
+    process.exitCode = 1;
     return;
   }
 
@@ -120,6 +121,7 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
       onProgress.stop();
       spinner.fail(`Task ${task.id} failed`);
       console.error(chalk.red(`\n  ${err.message}`));
+      process.exitCode = 1;
     }
   } else {
     // Fallback: save prompt into the spec's own directory (wherever it lives).

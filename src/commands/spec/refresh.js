@@ -117,6 +117,7 @@ export async function refreshCmd({ dir, promptOnly, verbose = false, force = fal
     } catch (err) {
       spinner.fail(`Failed to refresh ${dir}`);
       console.error(chalk.red(`  ${err.message}`));
+      process.exitCode = 1;
     }
     console.log(chalk.dim(`\n  Module specs: specs/_map/*.spec.md\n`));
     return;
@@ -200,6 +201,7 @@ export async function refreshCmd({ dir, promptOnly, verbose = false, force = fal
           if (err) {
             spinner.fail(`  [${i + 1}/${pending.length}] ${chalk.blue(label)} ${chalk.red('failed')}`);
             console.error(chalk.dim(`    ${err.message}`));
+            process.exitCode = 1;   // a partial refresh is not a success
             return;
           }
           writeSpecWithFrontmatter(pending[i].specPath, result, pending[i].groupHash);

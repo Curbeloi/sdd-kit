@@ -15,6 +15,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { withTempDir, createMockSpec } from './test-helpers.js';
@@ -31,11 +32,11 @@ const EXIT_TIMEOUT_MS = 20000;
  * stdio is piped, so this also exercises the non-TTY flush path where an
  * over-eager `process.exit()` would truncate output.
  */
-function run(args, { cwd = process.cwd(), timeoutMs = EXIT_TIMEOUT_MS } = {}) {
+function run(args, { cwd = process.cwd(), timeoutMs = EXIT_TIMEOUT_MS, env = {} } = {}) {
   return new Promise((resolve, reject) => {
     const proc = spawn(process.execPath, args, {
       cwd,
-      env: { ...process.env, SDD_LANG: 'en', NO_COLOR: '1' },
+      env: { ...process.env, SDD_LANG: 'en', NO_COLOR: '1', ...env },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -150,5 +151,65 @@ describe('progress heartbeat', () => {
     `;
     const { code, stderr } = await run(['--input-type=module', '-e', script], { timeoutMs: 10000 });
     assert.equal(code, 0, stderr);
+  });
+});
+
+describe('exit codes', () => {
+  // `sdd ... && next-step` must not run next-step after a failure. These all
+  // used to print an error and exit 0.
+  it('spec status exits non-zero for a missing spec', async () => {
+    await withTempDir(async (dir) => {
+      const { code, stderr } = await sdd(['spec', 'status', 'feat-nope'], { cwd: dir });
+      assert.notEqual(code, 0);
+      assert.match(stderr, /not found/i);
+    });
+  });
+
+  it('spec rename exits non-zero for a missing spec', async () => {
+    await withTempDir(async (dir) => {
+      const { code } = await sdd(['spec', 'rename', 'feat-nope', 'feat-new'], { cwd: dir });
+      assert.notEqual(code, 0);
+    });
+  });
+
+  it('spec delete exits non-zero for a missing spec', async () => {
+    await withTempDir(async (dir) => {
+      const { code } = await sdd(['spec', 'delete', 'feat-nope', '--force'], { cwd: dir });
+      assert.notEqual(code, 0);
+    });
+  });
+
+  it('spec execute exits non-zero for a missing spec', async () => {
+    await withTempDir(async (dir) => {
+      const { code } = await sdd(['spec', 'execute', 'feat-nope'], { cwd: dir });
+      assert.notEqual(code, 0);
+    });
+  });
+
+  it('spec document exits non-zero for a missing path', async () => {
+    await withTempDir(async (dir) => {
+      const { code } = await sdd(['spec', 'document', 'no/such/dir'], { cwd: dir });
+      assert.notEqual(code, 0);
+    });
+  });
+
+  it('spec refresh exits non-zero when the provider is unreachable', async () => {
+    await withTempDir(async (dir) => {
+      fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'export const a = 1;\n');
+      const { code } = await sdd(
+        ['spec', 'refresh', 'src', '--force', '--provider', 'openai', '--model', 'x'],
+        { cwd: dir, env: { OPENAI_API_KEY: 'dummy', SDD_BASE_URL: 'http://localhost:59999/v1' } },
+      );
+      assert.notEqual(code, 0);
+    });
+  });
+
+  it('a successful command still exits 0', async () => {
+    await withTempDir(async (dir) => {
+      createMockSpec(dir, 'feat-a', { tasks: '- [x] **1.1** done `a.js`' });
+      const { code } = await sdd(['spec', 'status', 'feat-a'], { cwd: dir });
+      assert.equal(code, 0);
+    });
   });
 });

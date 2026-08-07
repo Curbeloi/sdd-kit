@@ -25,7 +25,8 @@ Causa raiz doble: (a) Claude Code reporta los fallos de API como JSON en **stdou
 
 ### R2: ningun comando deja el proceso vivo tras imprimir su resultado
 - WHEN cualquier comando de sdd-kit termina THEN el proceso sale, con stdout drenado antes de salir (no truncar output en pipe)
-- WHEN un comando falla THEN sale con codigo distinto de 0
+- WHEN un comando falla THEN sale con codigo distinto de 0, para que `sdd ... && siguiente-paso` no continue tras un fallo
+- WHEN un refresh o document falla parcialmente (algun item) THEN el comando sale con codigo 1
 - WHEN el proceso hijo del CLI agentico sigue vivo al liberar la promesa THEN se le manda SIGTERM y se escala a SIGKILL
 - WHEN se corre en CI THEN existe un test de regresion que falla (no cuelga) si el proceso no sale
 
@@ -63,3 +64,10 @@ Causa raiz doble: (a) Claude Code reporta los fallos de API como JSON en **stdou
 - WHEN se pasa `--flow <feature>` THEN se pide un sequenceDiagram detallado de esa feature
 - WHEN `--flow` no coincide con ningun spec THEN falla con codigo 1 y sugiere el nombre parecido
 - WHEN `--level` recibe un valor invalido THEN commander lo rechaza listando los validos
+
+### R8: los proveedores por SDK funcionan con las versiones nuevas
+- WHEN se fuerza `--provider ollama|openai` THEN la peticion sale por el SDK openai v7 y devuelve contenido
+- WHEN se fuerza `--provider anthropic` THEN la peticion sale por @anthropic-ai/sdk 0.115 al endpoint /v1/messages
+- WHEN el endpoint no responde THEN se muestra el error real y el proceso sale con codigo 1
+- WHEN la ANTHROPIC_API_KEY no empieza por sk- THEN se rechaza antes de hacer la peticion
+- WHEN termina una peticion por SDK THEN el pool de conexiones no mantiene vivo el proceso

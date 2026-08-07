@@ -65,7 +65,15 @@ Arreglar los dos bugs de sdd arch: el proceso que nunca sale tras un run exitoso
 - [x] **7.4** Aplicar unref y try/finally a los dos heartbeats de spec document `src/commands/spec/document.js` <- R2
 - [x] **7.5** Tests de foco por nivel y flujo, y del prompt por defecto sin cambios `src/core/arch-prompt.test.js` <- R7
 
+### 8. Codigos de salida y proveedores SDK
+
+- [x] **8.1** Salir con codigo 1 en los caminos de error de refresh, execute, status, rename y delete `src/commands/spec/refresh.js` <- R2
+- [x] **8.2** Salir con codigo 1 cuando document falla parcial o totalmente `src/commands/spec/document.js` <- R2
+- [x] **8.3** Tests de codigo de salida por comando, incluido el exito en 0 `src/cli.test.js` <- R2
+
 ## Verification
 
-- [x] **8.1** Verificar que el test de regresion falla contra el codigo pre-fix, no solo que pasa con el fix `src/cli.test.js` <- R2
-- [x] **8.2** Correr arch en vivo sobre un repo de 332 specs y confirmar architecture.md valido y salida limpia `specs/_arch/architecture.md` <- R4
+- [x] **9.1** Verificar que el test de regresion falla contra el codigo pre-fix, no solo que pasa con el fix `src/cli.test.js` <- R2
+- [x] **9.2** Correr arch en vivo sobre un repo de 332 specs y confirmar architecture.md valido y salida limpia `specs/_arch/architecture.md` <- R4
+- [x] **9.3** Probar el SDK openai v7 en vivo contra Ollama local y verificar el contenido generado `src/core/providers/openai-provider.js` <- R8
+- [x] **9.4** Probar @anthropic-ai/sdk 0.115 contra un mock local del Messages API `src/core/providers/anthropic-provider.js` <- R8

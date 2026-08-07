@@ -21,6 +21,7 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
 
   if (!fs.existsSync(resolvedSource)) {
     console.error(chalk.red(`\n  Path not found: ${source}\n`));
+    process.exitCode = 1;
     return;
   }
 
@@ -97,6 +98,7 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
         if (err) {
           spinner.fail(`${prefix} ${chalk.blue(label)} ${chalk.red('failed')}`);
           console.error(chalk.dim(`      ${err.message}`));
+          process.exitCode = 1;   // a partial analysis is not a success
         } else {
           // Save module spec
           const mapDir = path.join(cwd, 'specs', '_map');
