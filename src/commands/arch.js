@@ -37,14 +37,37 @@ export async function archCmd({ level, flow, output, promptOnly, cwd = process.c
     return;
   }
 
-  console.log(chalk.dim(`  Reading ${moduleCount} module spec(s), ${specCount} feature spec(s), ${steeringCount} steering file(s)\n`));
+  // A --flow that matches nothing used to be accepted and silently ignored.
+  // Fail loudly instead: a typo'd feature name should not look like a clean run.
+  if (flow && !specs.some(s => s.name === flow)) {
+    const near = specs.map(s => s.name).filter(n => n.includes(flow) || flow.includes(n)).slice(0, 5);
+    console.error(chalk.red(`\n  No feature spec named "${flow}".`));
+    if (near.length) {
+      console.log(chalk.dim('  Did you mean:'));
+      for (const n of near) console.log(chalk.dim(`    ${n}`));
+    } else {
+      console.log(chalk.dim('  Run `sdd spec list` to see available specs.'));
+    }
+    console.log('');
+    process.exitCode = 1;
+    return;
+  }
+
+  const focus = [
+    level && level !== 'system' ? `level: ${level}` : null,
+    flow ? `flow: ${flow}` : null,
+  ].filter(Boolean).join('  |  ');
+
+  console.log(chalk.dim(`  Reading ${moduleCount} module spec(s), ${specCount} feature spec(s), ${steeringCount} steering file(s)`));
+  if (focus) console.log(chalk.dim(`  Focus — ${focus}`));
+  console.log('');
 
   const spinner = ora('Generating architecture via Claude Code...').start();
 
   const onProgress = createProgress(spinner);
 
   try {
-    const result = await generateArchitecture({ promptOnly, cwd, moduleSpecs, steering, featureSpecs: specs, onProgress });
+    const result = await generateArchitecture({ promptOnly, cwd, moduleSpecs, steering, featureSpecs: specs, level, flow, onProgress });
 
     if (result.mode === Mode.PROMPT) {
       spinner.info('Claude Code not found — prompt saved');

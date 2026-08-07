@@ -36,6 +36,16 @@ const FEATURE_HEADLINE_RESERVE_SHARE = 0.25;
 /** Feature detail levels, richest first. */
 export const FEATURE_DETAIL_LEVELS = ['full', 'summary', 'headline'];
 
+/** `--level` values and what each one asks the agent to prioritise. */
+export const LEVEL_FOCUS = {
+  system: 'Prioritise the system-level picture: bounded contexts, external dependencies and the overall data flow.',
+  services: 'Prioritise service-to-service relationships: call direction, protocols, shared stores and coupling.',
+  modules: 'Prioritise the internal module breakdown: per-directory responsibilities and their dependencies.',
+};
+
+/** Valid `--level` values, for CLI validation. */
+export const ARCH_LEVELS = Object.keys(LEVEL_FOCUS);
+
 const FEATURE_LIMITS = {
   full:     { requirements: 1500, design: 1500 },
   summary:  { requirements: 400,  design: 0 },
@@ -123,7 +133,7 @@ function renderFeatures(specs, level) {
 
 // ─── Instructions ────────────────────────────────────────────────────────────
 
-function instructions({ degraded, omitted, specsDir }) {
+function instructions({ degraded, omitted, specsDir, level, flow }) {
   const caveat = degraded
     ? `
 NOTE ON INPUT COMPLETENESS
@@ -134,8 +144,30 @@ describing it. Do not invent components you cannot substantiate.
 `
     : '';
 
+  // Emphasis, never suppression: the dashboard renders every section, so a
+  // missing one would leave empty views. --level changes what gets the most
+  // detail, not what is emitted.
+  //
+  // `system` is the default and already the unfocused view, so it adds nothing —
+  // that keeps the default prompt identical to the one verified against the CLI.
+  const levelFocus = level !== 'system' && LEVEL_FOCUS[level]
+    ? `
+FOCUS: ${level.toUpperCase()}
+${LEVEL_FOCUS[level]}
+Still emit every section below — this changes depth, not coverage.
+`
+    : '';
+
+  const flowFocus = flow
+    ? `
+FLOW FOCUS: ${flow}
+Under SECTION: FLOWS, give "${flow}" a detailed sequenceDiagram first, covering its
+participants, the order of calls and the failure paths. Other flows may stay brief.
+`
+    : '';
+
   return `---
-${caveat}
+${caveat}${levelFocus}${flowFocus}
 Based on the documentation above, create specs/_arch/architecture.md with Mermaid diagrams.
 
 Use these exact section headers:
@@ -193,6 +225,8 @@ A JSON object (no markdown fences):
  * @param {object[]} [opts.featureSpecs] - specs from readAllSpecs()
  * @param {number}   [opts.budget]       - max prompt characters
  * @param {string}   [opts.specsDir]     - where full feature specs live (for the caveat)
+ * @param {string}   [opts.level]        - system | services | modules (emphasis only)
+ * @param {string}   [opts.flow]         - feature name to diagram in detail
  * @returns {{prompt: string, stats: object}}
  */
 export function buildArchPrompt({
@@ -201,11 +235,13 @@ export function buildArchPrompt({
   featureSpecs = [],
   budget = DEFAULT_ARCH_PROMPT_BUDGET,
   specsDir = 'specs/features',
+  level,
+  flow,
 } = {}) {
   const header = 'Analyze the following project documentation and generate architecture views.\n';
 
   // Reserve space for the fixed instruction block up front (worst case: degraded).
-  const footerReserve = instructions({ degraded: true, omitted: 9999, specsDir }).length;
+  const footerReserve = instructions({ degraded: true, omitted: 9999, specsDir, level, flow }).length;
   let remaining = Math.max(0, budget - header.length - footerReserve);
 
   // ── Tier 1: steering ──
@@ -232,9 +268,11 @@ export function buildArchPrompt({
   }
   remaining -= moduleText.length;
 
-  // ── Tier 3: feature specs — richest level that fits, most recent first ──
+  // ── Tier 3: feature specs — richest detail that fits, most recent first ──
+  // `detailLevel` is how much of each spec is sent; it is unrelated to the
+  // caller's `level` (system|services|modules), which only shifts emphasis.
   const ordered = [...featureSpecs].sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
-  let level = 'headline';
+  let detailLevel = 'headline';
   let included = ordered;
   let featureText = '';
   let omitted = 0;
@@ -242,7 +280,7 @@ export function buildArchPrompt({
   for (const candidate of FEATURE_DETAIL_LEVELS) {
     const text = renderFeatures(ordered, candidate);
     if (text.length <= remaining) {
-      level = candidate;
+      detailLevel = candidate;
       featureText = text;
       break;
     }
@@ -262,13 +300,13 @@ export function buildArchPrompt({
   }
   remaining -= featureText.length;
 
-  const degraded = level !== 'full' || omitted > 0;
+  const degraded = detailLevel !== 'full' || omitted > 0;
   const prompt = [
     header,
     steeringText,
     moduleText,
     featureText,
-    instructions({ degraded, omitted, specsDir }),
+    instructions({ degraded, omitted, specsDir, level, flow }),
   ].filter(Boolean).join('\n');
 
   return {
@@ -278,13 +316,15 @@ export function buildArchPrompt({
       estTokens: estimateTokens(prompt.length),
       budget,
       degraded,
-      featureDetail: level,
+      featureDetail: detailLevel,
       moduleCount,
       steeringCount,
       featuresTotal: ordered.length,
       featuresIncluded: included.length,
       featuresOmitted: omitted,
       perModuleChars: moduleCount ? perModule : 0,
+      level: level || null,
+      flow: flow || null,
     },
   };
 }

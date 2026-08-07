@@ -493,13 +493,14 @@ export async function generateDocumentSpec({ source, specName, promptOnly, cwd, 
   return { mode, prompt, specName };
 }
 
-export async function generateArchitecture({ promptOnly, cwd, moduleSpecs, steering, featureSpecs, onProgress }) {
+export async function generateArchitecture({ promptOnly, cwd, moduleSpecs, steering, featureSpecs, level, flow, onProgress }) {
   const mode = await detectMode(promptOnly, cwd);
   const { archMaxPromptChars, specsDir, agentMaxBudgetUsd } = getConfig(cwd);
   const { prompt, stats } = buildArchPrompt({
     moduleSpecs, steering, featureSpecs,
     budget: archMaxPromptChars,
     specsDir,
+    level, flow,
   });
 
   if (mode === Mode.CLAUDE) {

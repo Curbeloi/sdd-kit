@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildArchPrompt, estimateTokens, DEFAULT_ARCH_PROMPT_BUDGET } from './arch-prompt.js';
+import { buildArchPrompt, estimateTokens, DEFAULT_ARCH_PROMPT_BUDGET, ARCH_LEVELS } from './arch-prompt.js';
 
 function makeSpec(name, { req = '', design = '', done = 0, total = 0, mtime = 0 } = {}) {
   const tasks = Array.from({ length: total }, (_, i) => ({ done: i < done, id: `1.${i}`, desc: 'x', file: null }));
@@ -116,5 +116,56 @@ describe('estimateTokens', () => {
   it('approximates 4 characters per token', () => {
     assert.equal(estimateTokens(400), 100);
     assert.equal(estimateTokens(0), 0);
+  });
+});
+
+describe('buildArchPrompt — --level and --flow', () => {
+  // Both flags were documented in --help and the README but never reached the
+  // prompt: archCmd destructured them and dropped them on the floor.
+  const specs = [makeSpec('feat-auth', { req: '# Requirements: auth\n\nJWT', total: 1 })];
+
+  it('injects a focus block for each non-default level', () => {
+    for (const level of ARCH_LEVELS.filter(l => l !== 'system')) {
+      const { prompt, stats } = buildArchPrompt({ featureSpecs: specs, level });
+      assert.ok(prompt.includes(`FOCUS: ${level.toUpperCase()}`), `no focus block for ${level}`);
+      assert.equal(stats.level, level);
+    }
+  });
+
+  it('adds no focus block for the default level', () => {
+    // `--level system` is the default; emitting a focus block for it would change
+    // the baseline prompt for every user who never passes the flag.
+    const { prompt } = buildArchPrompt({ featureSpecs: specs, level: 'system' });
+    assert.ok(!prompt.includes('FOCUS:'));
+  });
+
+  it('keeps every section even when a level is requested', () => {
+    // The dashboard renders all views; suppressing a section would leave it blank.
+    const { prompt } = buildArchPrompt({ featureSpecs: specs, level: 'services' });
+    for (const section of ['OVERVIEW', 'SERVICES', 'FLOWS', 'MODULES', 'SUMMARY']) {
+      assert.ok(prompt.includes(`### SECTION: ${section}`), `missing SECTION: ${section}`);
+    }
+  });
+
+  it('asks for a detailed sequence diagram for the requested flow', () => {
+    const { prompt, stats } = buildArchPrompt({ featureSpecs: specs, flow: 'feat-auth' });
+    assert.match(prompt, /FLOW FOCUS: feat-auth/);
+    assert.match(prompt, /sequenceDiagram/);
+    assert.equal(stats.flow, 'feat-auth');
+  });
+
+  it('adds nothing when neither flag is given', () => {
+    const { prompt, stats } = buildArchPrompt({ featureSpecs: specs });
+    assert.ok(!prompt.includes('FOCUS:'));
+    assert.ok(!prompt.includes('FLOW FOCUS'));
+    assert.equal(stats.level, null);
+    assert.equal(stats.flow, null);
+  });
+
+  it('still respects the budget with both flags set', () => {
+    const { prompt } = buildArchPrompt({
+      featureSpecs: manySpecs(300), budget: 40000, level: 'modules', flow: 'feat-299',
+    });
+    assert.ok(prompt.length <= 40000, `prompt ${prompt.length} exceeded budget`);
   });
 });

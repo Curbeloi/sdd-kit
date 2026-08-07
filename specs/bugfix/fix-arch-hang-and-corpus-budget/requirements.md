@@ -55,3 +55,11 @@ Causa raiz doble: (a) Claude Code reporta los fallos de API como JSON en **stdou
 ### R6: el tope de gasto por run es configurable
 - WHEN un corpus grande cuesta mas de 1 USD analizarlo THEN el tope se puede subir via `agent_max_budget_usd`
 - WHEN se agota el tope THEN el error lo dice y muestra el valor actual
+
+### R7: las banderas documentadas hacen lo que dicen
+- WHEN se pasa `--level system|services|modules` THEN el prompt pide enfasis en ese nivel
+- WHEN se pasa `--level` THEN se siguen emitiendo todas las secciones (el dashboard las renderiza todas)
+- WHEN no se pasa `--level` THEN el prompt por defecto no cambia respecto al verificado en vivo
+- WHEN se pasa `--flow <feature>` THEN se pide un sequenceDiagram detallado de esa feature
+- WHEN `--flow` no coincide con ningun spec THEN falla con codigo 1 y sugiere el nombre parecido
+- WHEN `--level` recibe un valor invalido THEN commander lo rechaza listando los validos

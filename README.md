@@ -427,12 +427,22 @@ Generates architecture views from all specs, module docs, and steering docs. Pro
 # Generate architecture views
 sdd arch
 
+# Emphasize a level — every section is still produced, this shifts the depth
+sdd arch --level services      # system (default) | services | modules
+
+# Ask for a detailed sequence diagram for one feature
+sdd arch --flow feat-jwt-auth
+
 # Without Claude Code
 sdd arch --prompt-only
 
 # Open the dashboard
 open specs/_arch/dashboard.html
 ```
+
+`--level` and `--flow` change emphasis, never coverage: the dashboard renders every
+view, so suppressing a section would leave blanks. A `--flow` that matches no spec is
+an error (with a near-match suggestion), not a silently ignored flag.
 
 **Large spec corpora.** The whole corpus can't be sent to the model verbatim — past roughly 300
 feature specs it exceeds the context window. `sdd arch` spends a character budget

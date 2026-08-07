@@ -57,7 +57,15 @@ Arreglar los dos bugs de sdd arch: el proceso que nunca sale tras un run exitoso
 - [x] **6.2** Actualizar chalk, commander, ora, openai y el SDK de Anthropic a sus majores actuales `package.json` <- R2
 - [x] **6.3** Ajustar la matriz de CI a las versiones de node soportadas `.github/workflows/ci.yml` <- R2
 
+### 7. Correcciones de seguimiento
+
+- [x] **7.1** Hacer que --level y --flow lleguen al prompt en vez de ser no-ops silenciosos `src/core/arch-prompt.js` <- R7
+- [x] **7.2** Validar --flow contra los specs existentes y sugerir el parecido `src/commands/arch.js` <- R7
+- [x] **7.3** Restringir --level a los valores validos con choices `src/cli.js` <- R7
+- [x] **7.4** Aplicar unref y try/finally a los dos heartbeats de spec document `src/commands/spec/document.js` <- R2
+- [x] **7.5** Tests de foco por nivel y flujo, y del prompt por defecto sin cambios `src/core/arch-prompt.test.js` <- R7
+
 ## Verification
 
-- [x] **7.1** Verificar que el test de regresion falla contra el codigo pre-fix, no solo que pasa con el fix `src/cli.test.js` <- R2
-- [x] **7.2** Correr arch en vivo sobre un repo de 332 specs y confirmar architecture.md valido y salida limpia `specs/_arch/architecture.md` <- R4
+- [x] **8.1** Verificar que el test de regresion falla contra el codigo pre-fix, no solo que pasa con el fix `src/cli.test.js` <- R2
+- [x] **8.2** Correr arch en vivo sobre un repo de 332 specs y confirmar architecture.md valido y salida limpia `specs/_arch/architecture.md` <- R4

@@ -21,6 +21,7 @@ import { doctorCmd }   from './commands/doctor.js';
 import { providerListCmd, providerSetCmd, providerModelsCmd } from './commands/provider.js';
 import { setOverrides } from './core/config.js';
 import { exitWhenFlushed } from './core/shutdown.js';
+import { ARCH_LEVELS } from './core/arch-prompt.js';
 
 // Apply per-command LLM overrides (--provider / --model) at highest precedence.
 const applyProviderFlags = (opts) => setOverrides({ provider: opts.provider, model: opts.model });
@@ -341,7 +342,7 @@ ${chalk.bold(t.examples)}
 program
   .command('arch')
   .description(t.archDesc)
-  .option('-l, --level <level>',  t.archOptLevel, 'system')
+  .addOption(new Option('-l, --level <level>', t.archOptLevel).choices(ARCH_LEVELS).default('system'))
   .option('-f, --flow <feature>', t.archOptFlow)
   .option('-o, --output <path>',  t.archOptOutput)
   .option('-p, --prompt-only',    t.archOptPrompt)
