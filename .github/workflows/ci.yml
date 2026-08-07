@@ -47,11 +47,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Full history: the three-dot diff below needs a merge base, and the
+          # default shallow clone leaves base and head with no common ancestor.
+          fetch-depth: 0
 
       - name: Check for SDD spec in PR
         run: |
-          # Get list of changed files in this PR
-          git fetch origin ${{ github.base_ref }} --depth=1
+          # Files this PR touches, relative to where it forked off the base branch
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
 
           # Check if only docs/deps were changed (spec not required)
