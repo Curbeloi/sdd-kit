@@ -1,8 +1,65 @@
-node_modules/
-.DS_Store
+# Logs
+logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies & build output
+node_modules/
 package-lock.json
+dist
+dist-ssr
+*.local
+*.tsbuildinfo
+
+# Turbo
+.turbo
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+.env
+
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
+# AI — Claude Code config and instructions are personal, not shared (see 4f0e750).
+# To share project-level config instead, replace `.claude/` with `.claude/*` plus
+# `!.claude/settings.json` etc. — but note that `.claude/` ignores the whole
+# directory, so git never descends into it and any negation below it is dead.
 .claude/
 CLAUDE.md
-wiki/
+
+# Eval baselines (timestamped runs — ignore the runs but keep the folder structure)
+evals/baselines/chat/*/
+# User-provided eval fixtures for image/audio cases. Synthetic text/CSV fixtures are committed.
+evals/chat/fixtures/*.jpg
+evals/chat/fixtures/*.jpeg
+evals/chat/fixtures/*.png
+evals/chat/fixtures/*.gif
+evals/chat/fixtures/*.webp
+evals/chat/fixtures/*.mp3
+evals/chat/fixtures/*.wav
+evals/chat/fixtures/*.m4a
+evals/chat/fixtures/*.ogg
+evals/chat/fixtures/*.pdf
+
+# Throwaway app scaffolded by `pnpm verify:gen-app` (removed on exit)
+apps/gen-app-smoke/
+
+# sdd-kit local cache
 .sdd/
+wiki/
