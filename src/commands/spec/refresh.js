@@ -177,6 +177,8 @@ export async function refreshCmd({ dir, promptOnly, verbose = false, force = fal
     startTimes.set(i, Date.now());
   }
 
+  // unref + finally: a live interval here would keep the process running long
+  // after the last spec was written (the same hang that used to affect arch).
   const heartbeat = setInterval(() => {
     for (const [i, spinner] of spinners) {
       if (spinner.isSpinning) {
@@ -185,27 +187,32 @@ export async function refreshCmd({ dir, promptOnly, verbose = false, force = fal
       }
     }
   }, 1000);
+  heartbeat.unref();
 
-  await batchAsk(
-    pending.map(p => ({ prompt: p.prompt, label: p.label })),
-    {
-      maxTokens,
-      cwd,
-      onItemDone: (label, result, i, err) => {
-        const spinner = spinners.get(i);
-        if (err) {
-          spinner.fail(`  [${i + 1}/${pending.length}] ${chalk.blue(label)} ${chalk.red('failed')}`);
-          console.error(chalk.dim(`    ${err.message}`));
-          return;
-        }
-        writeSpecWithFrontmatter(pending[i].specPath, result, pending[i].groupHash);
-        const elapsed = Math.floor((Date.now() - startTimes.get(i)) / 1000);
-        spinner.succeed(`  [${i + 1}/${pending.length}] ${chalk.blue(label)} ${chalk.green('updated')} ${chalk.dim(`${elapsed}s`)}`);
+  try {
+    await batchAsk(
+      pending.map(p => ({ prompt: p.prompt, label: p.label })),
+      {
+        maxTokens,
+        cwd,
+        onItemDone: (label, result, i, err) => {
+          const spinner = spinners.get(i);
+          if (err) {
+            spinner.fail(`  [${i + 1}/${pending.length}] ${chalk.blue(label)} ${chalk.red('failed')}`);
+            console.error(chalk.dim(`    ${err.message}`));
+            return;
+          }
+          writeSpecWithFrontmatter(pending[i].specPath, result, pending[i].groupHash);
+          const elapsed = Math.floor((Date.now() - startTimes.get(i)) / 1000);
+          spinner.succeed(`  [${i + 1}/${pending.length}] ${chalk.blue(label)} ${chalk.green('updated')} ${chalk.dim(`${elapsed}s`)}`);
+        },
       },
-    },
-  );
-
-  clearInterval(heartbeat);
+    );
+  } finally {
+    clearInterval(heartbeat);
+    // Any spinner still running holds its own interval — stop them all.
+    for (const spinner of spinners.values()) if (spinner.isSpinning) spinner.stop();
+  }
 
   console.log(chalk.dim(`\n  Module specs: specs/_map/*.spec.md\n`));
 }

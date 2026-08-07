@@ -13,7 +13,9 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        # Floor is the oldest maintained LTS (see `engines.node` in package.json);
+        # chalk 6, commander 15 and openai 7 all require Node >= 22.
+        node-version: [22, 24]
 
     steps:
       - name: Checkout code

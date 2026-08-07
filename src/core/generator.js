@@ -10,6 +10,7 @@ import { promisify } from 'util';
 import chalk from 'chalk';
 import { debugLog } from './log.js';
 import { getConfig } from './config.js';
+import { buildArchPrompt } from './arch-prompt.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -19,13 +20,19 @@ export const Mode = { CLAUDE: 'claude', PROMPT: 'prompt' };
 // Each agentic CLI describes how to check availability and build its args.
 // `claude` is the verified default; `opencode` is best-effort (verify the flags
 // against an installed opencode — its `run` subcommand and --model flag).
+//
+// `promptVia` says where the prompt goes: 'stdin' or 'argv'. An arch prompt for
+// a large repo is hundreds of KB and argv is capped (ARG_MAX ≈ 1 MB on macOS
+// and Linux, shared with the environment), so passing it as `-p <prompt>` fails
+// with E2BIG on exactly the repos that need it most.
 export const AGENT_CLIS = {
   claude: {
     command: 'claude',
     versionArgs: ['--version'],
     parse: 'stream-json',
-    buildArgs({ prompt, model, allowedTools = 'Read,Write,Glob,Grep', maxBudget }) {
-      const args = ['-p', prompt, '--allowedTools', allowedTools, '--output-format', 'stream-json', '--verbose'];
+    promptVia: 'stdin',   // `-p` with no value reads the prompt from stdin
+    buildArgs({ model, allowedTools = 'Read,Write,Glob,Grep', maxBudget }) {
+      const args = ['-p', '--allowedTools', allowedTools, '--output-format', 'stream-json', '--verbose'];
       if (model) args.push('--model', model);          // empty = inherit Claude Code default
       if (maxBudget) args.push('--max-budget-usd', String(maxBudget));
       return args;
@@ -35,6 +42,7 @@ export const AGENT_CLIS = {
     command: 'opencode',
     versionArgs: ['--version'],
     parse: 'opencode-json',
+    promptVia: 'argv',
     // `opencode run [message..]` — prompt is positional; -m/--model takes a
     // provider/model value (e.g. "anthropic/claude-sonnet-4-6"). `--format json`
     // emits line-delimited events (parsed defensively below). Permissions are
@@ -46,6 +54,79 @@ export const AGENT_CLIS = {
     },
   },
 };
+
+// Roughly: anything the API says when the request itself was too big to accept.
+const PROMPT_TOO_LONG_RE =
+  /prompt is too long|too many tokens|request_too_large|maximum context length|context (?:length|window|limit) exceeded|exceeds? the (?:maximum )?(?:context|token)/i;
+
+// The agentic CLI stopped because it ran out of spend, not because of the input.
+const BUDGET_EXHAUSTED_RE = /maximum budget|budget_exhausted|error_max_budget/i;
+
+/**
+ * Pull a usable error message out of a failed agentic CLI run.
+ *
+ * Claude Code reports API failures as JSON on *stdout* and leaves stderr empty,
+ * so the old `stderr || 'unknown error'` reported nothing at all. Scans the
+ * stream for the two places a real message shows up — the final `result` event
+ * and inline `is_api_error_message` assistant turns — and falls back to raw
+ * output only when neither is present.
+ *
+ * @param {string} stdout - raw stdout (line-delimited JSON, possibly partial)
+ * @param {string} stderr
+ * @returns {{message: string, promptTooLong: boolean, budgetExhausted: boolean}}
+ */
+export function extractAgentError(stdout = '', stderr = '') {
+  const messages = [];
+
+  for (const line of String(stdout).split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) continue;
+    let event;
+    try { event = JSON.parse(trimmed); } catch { continue; }
+
+    if (event.type === 'result') {
+      // { is_error: true, result: "Prompt is too long" }
+      if (event.is_error && typeof event.result === 'string') messages.push(event.result);
+      // { subtype: "error_max_budget_usd", errors: ["Reached maximum budget ($1)"] }
+      if (Array.isArray(event.errors)) {
+        for (const e of event.errors) if (typeof e === 'string' && e.trim()) messages.push(e);
+      }
+      // Last resort for this event: the machine-readable reason, so the message
+      // never degrades into a dump of the raw JSON line.
+      if (!messages.length && typeof event.subtype === 'string' && event.subtype.startsWith('error')) {
+        messages.push(event.subtype);
+      }
+    }
+    // Inline API error turn: { error: "invalid_request", is_api_error_message: true, ... }
+    if (event.is_api_error_message || event.error) {
+      const content = event.message?.content;
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (block.type === 'text' && block.text) messages.push(block.text);
+        }
+      } else if (typeof event.error === 'string') {
+        messages.push(event.error);
+      }
+    }
+  }
+
+  const err = String(stderr).trim();
+  if (err) messages.push(err);
+
+  // Nothing structured — surface the tail of whatever was printed.
+  if (!messages.length) {
+    const tail = String(stdout).trim().slice(-400);
+    if (tail) messages.push(tail);
+  }
+
+  const unique = [...new Set(messages.map(m => m.trim()).filter(Boolean))];
+  const message = unique.join(' — ') || 'no output on stdout or stderr';
+  return {
+    message,
+    promptTooLong: PROMPT_TOO_LONG_RE.test(message),
+    budgetExhausted: BUDGET_EXHAUSTED_RE.test(message),
+  };
+}
 
 function getAgentCli(cwd) {
   const { agentCli } = getConfig(cwd);
@@ -103,9 +184,13 @@ export async function detectMode(promptOnly = false, cwd = process.cwd()) {
 
 // ─── Agentic CLI caller ──────────────────────────────────────────────────────
 
+const AGENT_TIMEOUT_MS = 600000;   // 10 min
+const KILL_GRACE_MS = 5000;
+
 async function callAgentCli(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep', maxBudget, onProgress } = {}) {
   const descriptor = getAgentCli(cwd);
   const { agentModel } = getConfig(cwd);
+  const viaStdin = descriptor.promptVia === 'stdin';
   const args = descriptor.buildArgs({ prompt, model: agentModel, allowedTools, maxBudget });
 
   const debug = process.env.SDD_DEBUG === '1';
@@ -117,13 +202,57 @@ async function callAgentCli(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep'
     const proc = spawn(descriptor.command, args, {
       cwd,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [viaStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+
+    // Every exit path funnels through here so no handle outlives the call:
+    // a live timer or an undrained pipe keeps the event loop — and therefore
+    // the whole CLI — alive long after the command has printed its result.
+    let settled = false;
+    let timer;
+    const cleanup = () => {
+      clearTimeout(timer);
+      for (const stream of [proc.stdin, proc.stdout, proc.stderr]) {
+        if (stream && !stream.destroyed) stream.destroy();
+      }
+      proc.removeAllListeners();
+      // An 'error' with no listener throws. Node emits one when a kill fails,
+      // which is exactly what the next lines might do.
+      proc.on('error', (err) => debugLog('generator', `post-settle child error: ${err.message}`));
+      // Sole owner of termination, so the escalation actually gets its grace
+      // period. Only reached when we settle early (timeout); a normal close has
+      // already set exitCode.
+      if (proc.exitCode === null && proc.signalCode === null) {
+        proc.kill('SIGTERM');
+        const killTimer = setTimeout(() => proc.kill('SIGKILL'), KILL_GRACE_MS);
+        killTimer.unref();
+      }
+      proc.unref();   // a lingering child must not hold the CLI open
+    };
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      // Always release the progress heartbeat, whatever happened. Callers wire
+      // this to an interval-driven spinner; if `done` never arrives the interval
+      // never clears and the process hangs on success.
+      if (onProgress) { try { onProgress({ done: true, cost: lastCost }); } catch { /* display only */ } }
+      cleanup();
+      fn(value);
+    };
+
+    if (viaStdin) {
+      // A dead child turns this write into EPIPE; the close/error handler owns
+      // the failure, so swallow it here rather than crashing the CLI.
+      proc.stdin.on('error', (err) => debugLog('generator', `stdin write failed: ${err.message}`));
+      proc.stdin.end(prompt, 'utf-8');
+    }
+
     let fullOutput = '';
     let lastText = '';
     let buffer = '';
     let rawStdout = '';
     let lastCost;
+    let sawApiError = false;
     const opencodeTexts = new Map(); // part id -> latest text
 
     // Claude Code stream-json: content blocks with text + tool_use.
@@ -145,7 +274,13 @@ async function callAgentCli(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep'
       }
       if (event.type === 'result') {
         fullOutput = lastText || (event.result || '');
-        if (onProgress && (event.cost_usd || event.cost)) onProgress({ done: true, cost: event.cost_usd || event.cost });
+        // Claude Code names this `total_cost_usd`; the older aliases are kept as
+        // fallbacks. Completion itself is signalled from `settle()` on close —
+        // never from here, since a result event without a cost field used to
+        // mean the spinner's heartbeat interval was never cleared.
+        const cost = event.total_cost_usd ?? event.cost_usd ?? event.cost;
+        if (typeof cost === 'number') lastCost = cost;
+        if (event.is_error) sawApiError = true;
       }
     };
 
@@ -185,33 +320,34 @@ async function callAgentCli(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep'
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
     proc.on('close', (code) => {
-      clearTimeout(timer);
-      if (code !== 0) {
-        reject(new Error(`${descriptor.command} failed (exit ${code}): ${stderr || 'unknown error'}`));
+      const failed = code !== 0 || (sawApiError && !fullOutput);
+      if (failed) {
+        const { message, promptTooLong, budgetExhausted } = extractAgentError(rawStdout, stderr);
+        const err = new Error(`${descriptor.command} failed (exit ${code}): ${message}`);
+        if (promptTooLong) err.code = 'PROMPT_TOO_LONG';
+        else if (budgetExhausted) err.code = 'BUDGET_EXHAUSTED';
+        settle(reject, err);
         return;
       }
       if (descriptor.parse === 'stream-json') {
-        resolve(fullOutput);
+        settle(resolve, fullOutput);
       } else if (descriptor.parse === 'opencode-json') {
-        if (onProgress) onProgress({ done: true, cost: lastCost });
         const joined = [...opencodeTexts.values()].join('').trim();
-        resolve(joined || rawStdout.trim());
+        settle(resolve, joined || rawStdout.trim());
       } else {
-        if (onProgress) onProgress({ done: true });
-        resolve(rawStdout.trim());
+        settle(resolve, rawStdout.trim());
       }
     });
 
     proc.on('error', (err) => {
-      clearTimeout(timer);
-      reject(new Error(`${descriptor.command} failed: ${err.message}`));
+      settle(reject, new Error(`${descriptor.command} failed: ${err.message}`));
     });
 
-    // 10 min timeout
-    const timer = setTimeout(() => {
-      proc.kill();
-      reject(new Error(`${descriptor.command} timed out (10 min)`));
-    }, 600000);
+    // cleanup() terminates the child (SIGTERM, escalating to SIGKILL).
+    timer = setTimeout(() => {
+      settle(reject, new Error(`${descriptor.command} timed out (${AGENT_TIMEOUT_MS / 60000} min)`));
+    }, AGENT_TIMEOUT_MS);
+    timer.unref();   // the child's own handle keeps the loop alive while it runs
   });
 }
 
@@ -326,88 +462,6 @@ What this depends on.
 Anything important about implementation choices.
 `;
 
-// ─── Architecture ─────────────────────────────────────────────────────────
-
-function buildArchPrompt({ moduleSpecs, steering, featureSpecs }) {
-  const parts = [];
-
-  parts.push('Analyze the following project documentation and generate architecture views.\n');
-
-  // Module specs (living documentation per directory)
-  if (moduleSpecs && Object.keys(moduleSpecs).length) {
-    parts.push('## Module Specs (per-directory analysis)\n');
-    for (const [name, content] of Object.entries(moduleSpecs)) {
-      parts.push(`### Module: ${name}\n${content.slice(0, 3000)}\n`);
-    }
-  }
-
-  // Steering docs
-  if (steering && Object.keys(steering).length) {
-    parts.push('## Steering Documents\n');
-    for (const [name, content] of Object.entries(steering)) {
-      parts.push(`### ${name}\n${content.slice(0, 2000)}\n`);
-    }
-  }
-
-  // Feature specs
-  if (featureSpecs && featureSpecs.length) {
-    parts.push('## Feature Specs\n');
-    for (const spec of featureSpecs) {
-      parts.push(`### Feature: ${spec.name}`);
-      if (spec.files.requirements) parts.push(spec.files.requirements.slice(0, 1500));
-      if (spec.files.design) parts.push(spec.files.design.slice(0, 1500));
-      const done = spec.tasks.filter(t => t.done).length;
-      parts.push(`Tasks: ${done}/${spec.tasks.length} complete\n`);
-    }
-  }
-
-  parts.push(`---
-
-Based on the documentation above, create specs/_arch/architecture.md with Mermaid diagrams.
-
-Use these exact section headers:
-
-### SECTION: OVERVIEW
-\`\`\`mermaid
-graph TD
-  [System-level components and relationships]
-\`\`\`
-
-### SECTION: SERVICES
-\`\`\`mermaid
-graph LR
-  [Service-to-service relationships and data flow]
-\`\`\`
-
-### SECTION: FLOWS
-For each major feature or data flow:
-#### Flow: {feature-name}
-\`\`\`mermaid
-sequenceDiagram
-  [participants and interactions]
-\`\`\`
-
-### SECTION: MODULES
-\`\`\`mermaid
-graph TD
-  [Module/component breakdown]
-\`\`\`
-
-### SECTION: SUMMARY
-A JSON object (no markdown fences):
-{
-  "system_name": "string",
-  "description": "string",
-  "components": [{"name": "string", "type": "service|module|store|external", "description": "string"}],
-  "features": [{"name": "string", "status": "complete|in-progress|planned", "tasks_done": 0, "tasks_total": 0}],
-  "tech_stack": ["string"],
-  "key_decisions": ["string"]
-}
-`);
-
-  return parts.join('\n');
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────
 
 export async function generateCreateSpec({ description, specName, size, projectContext, promptOnly, cwd, onProgress }) {
@@ -441,14 +495,19 @@ export async function generateDocumentSpec({ source, specName, promptOnly, cwd, 
 
 export async function generateArchitecture({ promptOnly, cwd, moduleSpecs, steering, featureSpecs, onProgress }) {
   const mode = await detectMode(promptOnly, cwd);
-  const prompt = buildArchPrompt({ moduleSpecs, steering, featureSpecs });
+  const { archMaxPromptChars, specsDir, agentMaxBudgetUsd } = getConfig(cwd);
+  const { prompt, stats } = buildArchPrompt({
+    moduleSpecs, steering, featureSpecs,
+    budget: archMaxPromptChars,
+    specsDir,
+  });
 
   if (mode === Mode.CLAUDE) {
-    const raw = await callAgentCli(prompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: 1.0, onProgress });
-    return { mode, raw };
+    const raw = await callAgentCli(prompt, { cwd, allowedTools: 'Read,Write,Glob,Grep', maxBudget: agentMaxBudgetUsd, onProgress });
+    return { mode, raw, stats };
   }
 
-  return { mode, prompt };
+  return { mode, prompt, stats };
 }
 
 export function generateExecutePrompt({ spec, task, requirements, design, moduleContext }) {
