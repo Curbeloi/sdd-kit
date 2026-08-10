@@ -2,7 +2,8 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
-import { getConfig, resetConfig, getDefaults } from './config.js';
+import { getConfig, resetConfig, getDefaults, setOverrides, writeRc } from './config.js';
+import { DEFAULT_ARCH_PROMPT_BUDGET } from './arch-prompt.js';
 import { withTempDir } from '../test-helpers.js';
 
 beforeEach(() => {
@@ -77,5 +78,177 @@ describe('getDefaults', () => {
     assert.equal(defaults.specs_dir, 'specs/features');
     assert.equal(defaults.concurrency, 4);
     assert.equal(defaults.max_file_size, 50 * 1024);
+  });
+});
+
+describe('LLM provider config', () => {
+  const PROV_ENV = ['SDD_PROVIDER', 'SDD_MODEL', 'SDD_AGENT_CLI'];
+  let savedEnv;
+  beforeEach(() => {
+    savedEnv = {};
+    for (const k of PROV_ENV) { savedEnv[k] = process.env[k]; delete process.env[k]; }
+    resetConfig();
+  });
+  // restore after each test
+  const restore = () => {
+    for (const k of PROV_ENV) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+  };
+
+  it('provides provider/model/agent defaults', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      const config = getConfig(dir);
+      assert.equal(config.provider, 'auto');
+      assert.equal(config.model, '');
+      assert.equal(config.agentCli, 'claude');
+      assert.equal(config.agentModel, '');
+      restore();
+    });
+  });
+
+  it('reads provider keys from .sddrc', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      fs.writeFileSync(path.join(dir, '.sddrc'), JSON.stringify({
+        provider: 'ollama', model: 'llama3.1', base_url: 'http://localhost:11434/v1', agent_cli: 'opencode',
+      }), 'utf-8');
+      const config = getConfig(dir);
+      assert.equal(config.provider, 'ollama');
+      assert.equal(config.model, 'llama3.1');
+      assert.equal(config.baseUrl, 'http://localhost:11434/v1');
+      assert.equal(config.agentCli, 'opencode');
+      assert.equal(config._sources.provider, '.sddrc');
+      restore();
+    });
+  });
+
+  it('falls back to env vars and marks the source as env', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      process.env.SDD_PROVIDER = 'openai';
+      const config = getConfig(dir);
+      assert.equal(config.provider, 'openai');
+      assert.equal(config._sources.provider, 'env');
+      restore();
+    });
+  });
+
+  it('.sddrc wins over env vars', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      process.env.SDD_PROVIDER = 'openai';
+      fs.writeFileSync(path.join(dir, '.sddrc'), JSON.stringify({ provider: 'anthropic' }), 'utf-8');
+      const config = getConfig(dir);
+      assert.equal(config.provider, 'anthropic');
+      assert.equal(config._sources.provider, '.sddrc');
+      restore();
+    });
+  });
+
+  it('CLI overrides win over .sddrc and env, marked as cli', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      process.env.SDD_PROVIDER = 'openai';
+      fs.writeFileSync(path.join(dir, '.sddrc'), JSON.stringify({ provider: 'anthropic', model: 'x' }), 'utf-8');
+      setOverrides({ provider: 'vllm', model: 'my-model' });
+      const config = getConfig(dir);
+      assert.equal(config.provider, 'vllm');
+      assert.equal(config.model, 'my-model');
+      assert.equal(config._sources.provider, 'cli');
+      restore();
+    });
+  });
+
+  it('empty override values are ignored', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      setOverrides({ provider: '', model: undefined });
+      const config = getConfig(dir);
+      assert.equal(config.provider, 'auto'); // falls through to default
+      restore();
+    });
+  });
+
+  it('resetConfig clears overrides', async () => {
+    await withTempDir((dir) => {
+      setOverrides({ provider: 'ollama' });
+      resetConfig();
+      const config = getConfig(dir);
+      assert.equal(config.provider, 'auto');
+      restore();
+    });
+  });
+});
+
+describe('writeRc', () => {
+  beforeEach(() => resetConfig());
+
+  it('creates .sddrc and returns the merged object', async () => {
+    await withTempDir((dir) => {
+      const merged = writeRc(dir, { provider: 'openai', model: 'gpt-4o' });
+      assert.deepEqual(merged, { provider: 'openai', model: 'gpt-4o' });
+      const onDisk = JSON.parse(fs.readFileSync(path.join(dir, '.sddrc'), 'utf-8'));
+      assert.deepEqual(onDisk, { provider: 'openai', model: 'gpt-4o' });
+    });
+  });
+
+  it('preserves existing keys and drops empty values', async () => {
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'), JSON.stringify({ concurrency: 2, model: 'old' }), 'utf-8');
+      const merged = writeRc(dir, { provider: 'ollama', model: '' });
+      assert.equal(merged.concurrency, 2);    // untouched
+      assert.equal(merged.provider, 'ollama'); // added
+      assert.equal('model' in merged, false);  // dropped (empty string)
+    });
+  });
+
+  it('survives an invalid existing .sddrc by starting fresh', async () => {
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'), 'not json {', 'utf-8');
+      const merged = writeRc(dir, { provider: 'vllm' });
+      assert.deepEqual(merged, { provider: 'vllm' });
+    });
+  });
+});
+
+describe('arch corpus budget + agent spend cap', () => {
+  it('defaults to the shared arch prompt budget', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      assert.equal(getConfig(dir).archMaxPromptChars, DEFAULT_ARCH_PROMPT_BUDGET);
+      assert.equal(getConfig(dir).agentMaxBudgetUsd, 1.0);
+    });
+  });
+
+  it('reads both from .sddrc', async () => {
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'),
+        JSON.stringify({ arch_max_prompt_chars: 120000, agent_max_budget_usd: 5 }), 'utf-8');
+      resetConfig();
+      assert.equal(getConfig(dir).archMaxPromptChars, 120000);
+      assert.equal(getConfig(dir).agentMaxBudgetUsd, 5);
+    });
+  });
+
+  it('falls back to the default when the value is unusable', async () => {
+    // A typo'd budget must not silently become 0 — that would send an empty corpus.
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'),
+        JSON.stringify({ arch_max_prompt_chars: 'lots', agent_max_budget_usd: 'plenty' }), 'utf-8');
+      resetConfig();
+      assert.equal(getConfig(dir).archMaxPromptChars, DEFAULT_ARCH_PROMPT_BUDGET);
+      assert.equal(getConfig(dir).agentMaxBudgetUsd, 1.0);
+    });
+  });
+
+  it('rejects a zero or negative budget', async () => {
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'), JSON.stringify({ arch_max_prompt_chars: 0 }), 'utf-8');
+      resetConfig();
+      assert.equal(getConfig(dir).archMaxPromptChars, DEFAULT_ARCH_PROMPT_BUDGET);
+    });
   });
 });

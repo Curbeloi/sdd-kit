@@ -21,6 +21,7 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
 
   if (!fs.existsSync(resolvedSource)) {
     console.error(chalk.red(`\n  Path not found: ${source}\n`));
+    process.exitCode = 1;
     return;
   }
 
@@ -73,7 +74,8 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
     startTimes.set(i, Date.now());
   }
 
-  // Heartbeat
+  // Heartbeat. unref + finally: a cosmetic interval must never be the reason
+  // the process outlives its own output (the `sdd arch` hang was exactly this).
   const heartbeat = setInterval(() => {
     for (const [i, spinner] of spinners) {
       if (spinner.isSpinning) {
@@ -82,31 +84,39 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
       }
     }
   }, 1000);
+  heartbeat.unref();
 
-  const results = await batchAsk(items, {
-    maxTokens: 2000,
-    cwd,
-    onItemDone: (label, result, i, err) => {
-      const prefix = chalk.dim(`  [${i + 1}/${items.length}]`);
-      const spinner = spinners.get(i);
+  let results;
+  try {
+    results = await batchAsk(items, {
+      maxTokens: 2000,
+      cwd,
+      onItemDone: (label, result, i, err) => {
+        const prefix = chalk.dim(`  [${i + 1}/${items.length}]`);
+        const spinner = spinners.get(i);
 
-      if (err) {
-        spinner.fail(`${prefix} ${chalk.blue(label)} ${chalk.red('failed')}`);
-        console.error(chalk.dim(`      ${err.message}`));
-      } else {
-        // Save module spec
-        const mapDir = path.join(cwd, 'specs', '_map');
-        fs.mkdirSync(mapDir, { recursive: true });
-        const specPath = path.join(mapDir, `${slugifyDir(label)}.spec.md`);
-        fs.writeFileSync(specPath, result, 'utf-8');
+        if (err) {
+          spinner.fail(`${prefix} ${chalk.blue(label)} ${chalk.red('failed')}`);
+          console.error(chalk.dim(`      ${err.message}`));
+          process.exitCode = 1;   // a partial analysis is not a success
+        } else {
+          // Save module spec
+          const mapDir = path.join(cwd, 'specs', '_map');
+          fs.mkdirSync(mapDir, { recursive: true });
+          const specPath = path.join(mapDir, `${slugifyDir(label)}.spec.md`);
+          fs.writeFileSync(specPath, result, 'utf-8');
 
-        const elapsed = Math.floor((Date.now() - startTimes.get(i)) / 1000);
-        spinner.succeed(`${prefix} ${chalk.blue(label)} ${chalk.green('done')} ${chalk.dim(`${elapsed}s → _map/${slugifyDir(label)}.spec.md`)}`);
-      }
-    },
-  });
+          const elapsed = Math.floor((Date.now() - startTimes.get(i)) / 1000);
+          spinner.succeed(`${prefix} ${chalk.blue(label)} ${chalk.green('done')} ${chalk.dim(`${elapsed}s → _map/${slugifyDir(label)}.spec.md`)}`);
+        }
+      },
+    });
+  } finally {
+    clearInterval(heartbeat);
+    // A spinner left spinning owns an interval of its own.
+    for (const spinner of spinners.values()) if (spinner.isSpinning) spinner.stop();
+  }
 
-  clearInterval(heartbeat);
   console.log('');
 
   // Build partial specs for synthesis
@@ -124,13 +134,13 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
     const s = Math.floor((Date.now() - synthStart) / 1000);
     spinnerSynth.suffixText = chalk.dim(`${s}s`);
   }, 1000);
+  synthHeartbeat.unref();
 
   try {
     const unified = await askClaude(
       synthPrompt + '\n\nReturn ONLY the markdown content for the spec file. No explanation.',
       { maxTokens: 4000, cwd }
     );
-    clearInterval(synthHeartbeat);
 
     const specsDir = path.join(cwd, 'specs');
     fs.mkdirSync(specsDir, { recursive: true });
@@ -144,7 +154,6 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
     // Auto-refresh steering docs
     await refreshSteering({ cwd, silent: false });
   } catch (err) {
-    clearInterval(synthHeartbeat);
     spinnerSynth.fail('Synthesis failed');
     console.error(chalk.red(`  ${err.message}`));
 
@@ -153,6 +162,12 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
     const promptPath = path.join(specsDir, `${specName}_synthesis_prompt.md`);
     fs.writeFileSync(promptPath, synthPrompt, 'utf-8');
     console.log(chalk.dim(`  Prompt saved: ${path.relative(cwd, promptPath)}`));
+    process.exitCode = 1;
+  } finally {
+    // One place clears it, on every path — including the `refreshSteering`
+    // call above, which could throw after the spec was already written.
+    clearInterval(synthHeartbeat);
+    if (spinnerSynth.isSpinning) spinnerSynth.stop();
   }
 
   console.log('');

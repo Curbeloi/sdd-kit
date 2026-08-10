@@ -22,7 +22,12 @@ export function createProgress(spinner) {
   const start = Date.now();
   const baseText = spinner.text;
 
-  // Heartbeat: update elapsed time every second so spinner looks alive
+  // Heartbeat: update elapsed time every second so spinner looks alive.
+  //
+  // `unref()` is load-bearing, not a micro-optimisation: this interval is
+  // cosmetic, but a referenced one holds the event loop open forever if the
+  // `done` event never arrives — which is exactly how `sdd arch` used to print
+  // its full result and then hang indefinitely.
   const heartbeat = setInterval(() => {
     const elapsed = formatElapsed(Date.now() - start);
     if (steps === 0) {
@@ -31,12 +36,13 @@ export function createProgress(spinner) {
       spinner.suffixText = chalk.dim(`[${steps}] ${elapsed}`);
     }
   }, 1000);
+  heartbeat.unref();
 
   const progress = (event) => {
     if (event.done) {
       clearInterval(heartbeat);
       const elapsed = formatElapsed(Date.now() - start);
-      const cost = event.cost ? `$${event.cost.toFixed(3)}` : '';
+      const cost = typeof event.cost === 'number' ? `$${event.cost.toFixed(3)}` : '';
       spinner.suffixText = chalk.dim(`${cost} ${elapsed}`);
       return;
     }
@@ -50,7 +56,8 @@ export function createProgress(spinner) {
     spinner.suffixText = chalk.dim(`[${steps}] ${elapsed}`);
   };
 
-  // Expose cleanup for error paths
+  // Expose cleanup so callers can guarantee it in a `finally` — idempotent, so
+  // stopping after a `done` event already fired is harmless.
   progress.stop = () => clearInterval(heartbeat);
 
   return progress;

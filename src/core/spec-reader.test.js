@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseTasks, findNextPendingTask, readSpec, parseFrontmatter, stringifyFrontmatter } from './spec-reader.js';
+import fs from 'fs';
+import path from 'path';
+import {
+  parseTasks, findNextPendingTask, readSpec, parseFrontmatter, stringifyFrontmatter,
+  specDestDir, resolveSpecDir, readAllSpecs,
+} from './spec-reader.js';
+import { resetConfig } from './config.js';
 import { withTempDir, createMockSpec } from '../test-helpers.js';
 
 describe('parseTasks', () => {
@@ -144,6 +150,69 @@ describe('readSpec', () => {
       assert.ok(spec.files.requirements);
       assert.ok(spec.files.design);
       assert.equal(spec.tasks[0].done, true);
+    });
+  });
+});
+
+describe('specDestDir (type routing)', () => {
+  const rel = (cwd, p) => path.relative(cwd, p);
+  it('routes by name prefix, defaulting unknown prefixes to features', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      assert.equal(rel(dir, specDestDir(dir, 'feat-a')),     path.join('specs', 'features', 'feat-a'));
+      assert.equal(rel(dir, specDestDir(dir, 'fix-b')),      path.join('specs', 'bugfix', 'fix-b'));
+      assert.equal(rel(dir, specDestDir(dir, 'bug-c')),      path.join('specs', 'bugfix', 'bug-c'));
+      assert.equal(rel(dir, specDestDir(dir, 'chore-d')),    path.join('specs', 'chore', 'chore-d'));
+      assert.equal(rel(dir, specDestDir(dir, 'refactor-e')), path.join('specs', 'refactor', 'refactor-e'));
+      assert.equal(rel(dir, specDestDir(dir, 'docs-f')),     path.join('specs', 'docs', 'docs-f'));
+      assert.equal(rel(dir, specDestDir(dir, 'whatever')),   path.join('specs', 'features', 'whatever'));
+    });
+  });
+});
+
+describe('resolveSpecDir + readAllSpecs (cross-folder)', () => {
+  const mkSpec = (dir, type, name, tasks = '- [ ] **1.1** Do it') => {
+    const d = path.join(dir, 'specs', type, name);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'tasks.md'), tasks, 'utf-8');
+    return d;
+  };
+
+  it('aggregates specs across type folders and resolves by name', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      mkSpec(dir, 'features', 'feat-a');
+      mkSpec(dir, 'bugfix', 'fix-b');
+
+      const names = readAllSpecs(dir).map(s => s.name).sort();
+      assert.deepEqual(names, ['feat-a', 'fix-b']);
+
+      assert.ok(resolveSpecDir(dir, 'fix-b').endsWith(path.join('specs', 'bugfix', 'fix-b')));
+      assert.equal(resolveSpecDir(dir, 'nope'), null);
+    });
+  });
+
+  it('skips reserved dirs (_map, archived) and empty dirs', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      mkSpec(dir, 'features', 'feat-a');
+      fs.mkdirSync(path.join(dir, 'specs', '_map'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'specs', '_map', 'x.spec.md'), '# x', 'utf-8');
+      mkSpec(dir, 'archived', 'old');                                  // reserved
+      fs.mkdirSync(path.join(dir, 'specs', 'features', 'empty'), { recursive: true }); // no spec files
+
+      assert.deepEqual(readAllSpecs(dir).map(s => s.name), ['feat-a']);
+    });
+  });
+
+  it('reads a spec under a non-features type folder', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      mkSpec(dir, 'chore', 'chore-deps', '- [x] **1.1** bump');
+      const spec = readSpec(dir, 'chore-deps');
+      assert.equal(spec.name, 'chore-deps');
+      assert.equal(spec.tasks[0].done, true);
+      assert.ok(spec.dir.endsWith(path.join('specs', 'chore', 'chore-deps')));
     });
   });
 });

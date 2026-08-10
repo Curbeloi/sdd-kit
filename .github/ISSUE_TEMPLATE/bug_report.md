@@ -1,38 +1,54 @@
 ---
-name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
-assignees: ''
-
+name: 🐛 Bug Report
+about: Something isn't working as expected
+title: "[BUG] "
+labels: bug
+assignees: Curbeloi
 ---
 
-**Describe the bug**
+## Describe the Bug
+
 A clear and concise description of what the bug is.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Go to '...'
-2. Click on '....'
-3. Scroll down to '....'
-4. See error
+## Command Used
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+```bash
+sdd <command> [flags]
+```
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+## Steps to Reproduce
 
-**Desktop (please complete the following information):**
- - OS: [e.g. iOS]
- - Browser [e.g. chrome, safari]
- - Version [e.g. 22]
+1. Run `sdd ...`
+2. In a project with ...
+3. See error
 
-**Smartphone (please complete the following information):**
- - Device: [e.g. iPhone6]
- - OS: [e.g. iOS8.1]
- - Browser [e.g. stock browser, safari]
- - Version [e.g. 22]
+## Expected Behavior
 
-**Additional context**
-Add any other context about the problem here.
+What you expected to happen.
+
+## Actual Behavior
+
+What actually happened. Include the full error output:
+
+```
+Paste error output here
+```
+
+## Environment
+
+- **sdd-kit version**: (run `sdd --version`)
+- **Node.js version**: (run `node --version`)
+- **npm version**: (run `npm --version`)
+- **OS**: (e.g., macOS 15.2, Ubuntu 24.04, Windows 11)
+- **Shell**: (e.g., bash, zsh, PowerShell)
+
+## Project Context
+
+- **Project language/framework**: (e.g., Python/FastAPI, Node/React, Rust, etc.)
+- **Spec size used**: (`--size small`, `medium`, or `large`)
+
+## Additional Context
+
+Add any other context, screenshots, or log files here.
+
+> 💡 **Want to fix this?** Run `sdd spec create --size small` first — we use sdd-kit to build sdd-kit. See [CONTRIBUTING.md](../../CONTRIBUTING.md).

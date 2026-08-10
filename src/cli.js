@@ -14,9 +14,19 @@ import { refreshCmd }  from './commands/spec/refresh.js';
 import { listCmd }     from './commands/spec/list.js';
 import { deleteCmd }   from './commands/spec/delete.js';
 import { renameCmd }   from './commands/spec/rename.js';
-import { archiveCmd }  from './commands/spec/archive.js';
+import { archiveCmd, parseBeforeDate } from './commands/spec/archive.js';
 import { archCmd }     from './commands/arch.js';
 import { configCmd }   from './commands/config.js';
+import { doctorCmd }   from './commands/doctor.js';
+import { providerListCmd, providerSetCmd, providerModelsCmd } from './commands/provider.js';
+import { setOverrides } from './core/config.js';
+import { exitWhenFlushed } from './core/shutdown.js';
+import { ARCH_LEVELS } from './core/arch-prompt.js';
+
+// Apply per-command LLM overrides (--provider / --model) at highest precedence.
+const applyProviderFlags = (opts) => setOverrides({ provider: opts.provider, model: opts.model });
+const PROVIDER_OPT = (isEs) => isEs ? 'Proveedor LLM para este comando (override de .sddrc/env)' : 'LLM provider for this command (overrides .sddrc/env)';
+const MODEL_OPT = (isEs) => isEs ? 'Modelo para este comando (override de .sddrc/env)' : 'Model for this command (overrides .sddrc/env)';
 
 // ─── Language detection ──────────────────────────────────────────────────────
 
@@ -124,7 +134,7 @@ const program = new Command();
 program
   .name('sdd')
   .description(`🧠 ${t.desc}`)
-  .version('0.6.0')
+  .version('0.9.0')
   .configureHelp({
     visibleCommands(cmd) {
       const cmds = [];
@@ -158,6 +168,8 @@ ${chalk.bold(t.quickStart)}
   ${chalk.cyan('sdd spec refresh')}                               ${chalk.dim(`→ ${t.refreshAll}`)}
   ${chalk.cyan('sdd arch')}                                       ${chalk.dim(`→ ${t.archDashboard}`)}
   ${chalk.cyan('sdd config')}                                     ${chalk.dim(`→ ${isES ? 'ver configuración activa' : 'show active config'}`)}
+  ${chalk.cyan('sdd doctor')}                                     ${chalk.dim(`→ ${isES ? 'validar proveedor/CLI activo' : 'validate provider/CLI setup'}`)}
+  ${chalk.cyan('sdd provider list')}                              ${chalk.dim(`→ ${isES ? 'elegir/configurar proveedor LLM' : 'select/configure LLM provider'}`)}
 
 ${chalk.bold(t.specLevels)}
   ${chalk.red('-1')}   ${t.level1}
@@ -176,6 +188,8 @@ spec
   .option('-1', 'tasks.md only')
   .option('-2', 'requirements.md + tasks.md (default)')
   .option('-3', 'full spec: requirements + design + tasks')
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec create "Fix 422 on login endpoint" -1      ${chalk.dim('→ tasks only')}
@@ -184,8 +198,9 @@ ${chalk.bold(t.examples)}
   sdd spec create --name feat-whatsapp-flow            ${chalk.dim('→ name only')}
   `)
   .action((description, opts) => {
+    applyProviderFlags(opts);
     const level = opts[1] ? 1 : opts[3] ? 3 : 2;
-    createCmd({ description, name: opts.name, level });
+    return createCmd({ description, name: opts.name, level });
   });
 
 spec
@@ -193,6 +208,8 @@ spec
   .description(t.documentDesc)
   .option('-n, --name <name>',  t.documentOptName)
   .option('-p, --prompt-only',  t.documentOptPrompt)
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec document src/auth/
@@ -200,7 +217,8 @@ ${chalk.bold(t.examples)}
   sdd spec document src/components/Dashboard.tsx --prompt-only
   `)
   .action((source, opts) => {
-    documentCmd({ source, name: opts.name, promptOnly: opts.promptOnly || false });
+    applyProviderFlags(opts);
+    return documentCmd({ source, name: opts.name, promptOnly: opts.promptOnly || false });
   });
 
 spec
@@ -210,6 +228,8 @@ spec
   .option('--dry-run',         t.executeOptDry)
   .option('-p, --prompt-only', t.executeOptPrompt)
   .addOption(new Option('--refresh <mode>', t.executeOptRefresh).choices(['auto', 'structural', 'off']).default('structural'))
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec execute feat-jwt-auth                 ${chalk.dim(`→ ${t.executeSpec}`)}
@@ -219,7 +239,8 @@ ${chalk.bold(t.examples)}
   sdd spec execute feat-jwt-auth --refresh=auto  ${chalk.dim('→ refresh on any change (old behavior)')}
   `)
   .action((specName, opts) => {
-    executeCmd({ specName, taskId: opts.task, dryRun: opts.dryRun, promptOnly: opts.promptOnly, refreshMode: opts.refresh });
+    applyProviderFlags(opts);
+    return executeCmd({ specName, taskId: opts.task, dryRun: opts.dryRun, promptOnly: opts.promptOnly, refreshMode: opts.refresh });
   });
 
 spec
@@ -232,7 +253,7 @@ ${chalk.bold(t.examples)}
   sdd spec status feat-jwt-auth --verbose
   `)
   .action((specName, opts) => {
-    statusCmd({ specName, verbose: opts.verbose });
+    return statusCmd({ specName, verbose: opts.verbose });
   });
 
 spec
@@ -242,6 +263,8 @@ spec
   .option('-v, --verbose', t.refreshOptVerbose)
   .option('-f, --force', t.refreshOptForce)
   .option('-d, --deep', t.refreshOptDeep)
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd spec refresh                ${chalk.dim(`→ ${t.refreshAll}`)}
@@ -251,7 +274,8 @@ ${chalk.bold(t.examples)}
   sdd spec refresh --deep         ${chalk.dim('→ send full contents instead of symbol summaries')}
   `)
   .action((dir, opts) => {
-    refreshCmd({
+    applyProviderFlags(opts);
+    return refreshCmd({
       dir,
       promptOnly: opts.promptOnly || false,
       verbose: opts.verbose || false,
@@ -264,7 +288,7 @@ spec
   .command('list')
   .description(isES ? 'Listar todos los specs' : 'List all specs')
   .action(() => {
-    listCmd();
+    return listCmd();
   });
 
 spec
@@ -272,22 +296,45 @@ spec
   .description(isES ? 'Eliminar un spec' : 'Delete a spec')
   .option('--force', isES ? 'Borrar sin confirmación' : 'Delete without confirmation')
   .action((name, opts) => {
-    deleteCmd({ specName: name, force: opts.force || false });
+    return deleteCmd({ specName: name, force: opts.force || false });
   });
 
 spec
   .command('rename <old> <new>')
   .description(isES ? 'Renombrar un spec' : 'Rename a spec')
   .action((oldName, newName) => {
-    renameCmd({ oldName, newName });
+    return renameCmd({ oldName, newName });
   });
 
 spec
-  .command('archive <name>')
-  .description(isES ? 'Archivar un spec completado' : 'Archive a completed spec')
+  .command('archive [name]')
+  .description(isES ? 'Archivar specs completados (saca del corpus de arch)' : 'Archive completed specs (removes them from the arch corpus)')
   .option('--restore', isES ? 'Restaurar spec archivado' : 'Restore archived spec')
+  .option('--completed', isES ? 'Archivar todos los specs con todas sus tareas hechas' : 'Archive every spec whose tasks are all done')
+  .option('--before <date>', isES ? 'Archivar specs sin cambios desde esta fecha (YYYY-MM-DD)' : 'Archive specs untouched since this date (YYYY-MM-DD)')
+  .option('--dry-run', isES ? 'Mostrar qué se archivaría sin mover nada' : 'List what would be archived without moving anything')
+  .addHelpText('after', `
+${chalk.bold(t.examples)}
+  sdd spec archive feat-jwt-auth               ${chalk.dim('→ archive one spec')}
+  sdd spec archive --completed --dry-run       ${chalk.dim('→ preview finished specs')}
+  sdd spec archive --completed                 ${chalk.dim('→ prune the arch corpus')}
+  sdd spec archive --before 2026-01-01         ${chalk.dim('→ archive stale specs')}
+  sdd spec archive feat-jwt-auth --restore     ${chalk.dim('→ bring one back')}
+  `)
   .action((name, opts) => {
-    archiveCmd({ specName: name, restore: opts.restore || false });
+    const before = parseBeforeDate(opts.before);
+    if (opts.before && !before) {
+      console.error(chalk.red(`\n  Invalid --before date: ${opts.before} (expected YYYY-MM-DD)\n`));
+      process.exitCode = 1;
+      return;
+    }
+    return archiveCmd({
+      specName: name,
+      restore: opts.restore || false,
+      completed: opts.completed || false,
+      before,
+      dryRun: opts.dryRun || false,
+    });
   });
 
 // ─── sdd arch ─────────────────────────────────────────────────────────────
@@ -295,10 +342,12 @@ spec
 program
   .command('arch')
   .description(t.archDesc)
-  .option('-l, --level <level>',  t.archOptLevel, 'system')
+  .addOption(new Option('-l, --level <level>', t.archOptLevel).choices(ARCH_LEVELS).default('system'))
   .option('-f, --flow <feature>', t.archOptFlow)
   .option('-o, --output <path>',  t.archOptOutput)
   .option('-p, --prompt-only',    t.archOptPrompt)
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.output)}
   specs/_arch/architecture.md   ${chalk.dim(t.mermaid)}
@@ -311,7 +360,8 @@ ${chalk.bold(t.examples)}
   sdd arch --prompt-only
   `)
   .action((opts) => {
-    archCmd({ level: opts.level, flow: opts.flow, output: opts.output, promptOnly: opts.promptOnly || false });
+    applyProviderFlags(opts);
+    return archCmd({ level: opts.level, flow: opts.flow, output: opts.output, promptOnly: opts.promptOnly || false });
   });
 
 // ─── sdd init ─────────────────────────────────────────────────────────────
@@ -320,13 +370,16 @@ program
   .command('init')
   .description(t.initDesc)
   .option('-a, --auto', t.initOptAuto)
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
   .addHelpText('after', `
 ${chalk.bold(t.examples)}
   sdd init                ${chalk.dim(`→ ${t.initManual}`)}
   sdd init --auto         ${chalk.dim(`→ ${t.initAuto}`)}
   `)
   .action((opts) => {
-    import('./commands/init.js').then(m => m.initCmd({ auto: opts.auto || false }));
+    applyProviderFlags(opts);
+    return import('./commands/init.js').then(m => m.initCmd({ auto: opts.auto || false }));
   });
 
 // ─── sdd config ──────────────────────────────────────────────────────────
@@ -335,7 +388,68 @@ program
   .command('config')
   .description(isES ? 'Mostrar configuración activa' : 'Show active configuration')
   .action(() => {
-    configCmd();
+    return configCmd();
   });
 
-program.parse();
+// ─── sdd doctor ────────────────────────────────────────────────────────────
+
+program
+  .command('doctor')
+  .description(isES ? 'Validar el setup de proveedor/CLI activo' : 'Validate the active provider / agentic CLI setup')
+  .option('--provider <name>', PROVIDER_OPT(isES))
+  .option('--model <name>', MODEL_OPT(isES))
+  .action(async (opts) => {
+    applyProviderFlags(opts);
+    const ok = await doctorCmd();
+    process.exitCode = ok ? 0 : 1;
+  });
+
+// ─── sdd provider ────────────────────────────────────────────────────────────
+
+const provider = program
+  .command('provider')
+  .description(isES ? 'Elegir y configurar el proveedor LLM' : 'Select and configure the LLM provider');
+
+provider
+  .command('list')
+  .description(isES ? 'Listar proveedores y mostrar el activo' : 'List providers and show the active one')
+  .action(() => providerListCmd());
+
+provider
+  .command('set <provider>')
+  .description(isES ? 'Fijar el proveedor en .sddrc' : 'Set the provider in .sddrc')
+  .option('--model <name>', isES ? 'Modelo a usar' : 'Model to use')
+  .option('--base-url <url>', isES ? 'Endpoint OpenAI-compatible' : 'OpenAI-compatible endpoint')
+  .option('--api-key-env <name>', isES ? 'Nombre de la env var con la API key' : 'Env var name holding the API key')
+  .addHelpText('after', `
+${chalk.bold(t.examples)}
+  sdd provider set anthropic --model claude-sonnet-4-6
+  sdd provider set openai --model gpt-4o
+  sdd provider set ollama --model llama3.1
+  sdd provider set vllm --model meta-llama/Llama-3.1-8B-Instruct --base-url http://localhost:8000/v1
+  `)
+  .action((providerName, opts) => {
+    return providerSetCmd({ provider: providerName, model: opts.model, baseUrl: opts.baseUrl, apiKeyEnv: opts.apiKeyEnv });
+  });
+
+provider
+  .command('models')
+  .description(isES ? 'Listar modelos del proveedor activo' : 'List models from the active provider')
+  .option('--provider <name>', isES ? 'Consultar un proveedor específico' : 'Query a specific provider')
+  .option('--refresh', isES ? 'Refrescar el caché de modelos de opencode' : "Refresh opencode's model cache")
+  .action(async (opts) => {
+    await providerModelsCmd({ provider: opts.provider, refresh: opts.refresh });
+  });
+
+// `parseAsync` (not `parse`) so the command's promise is actually awaited —
+// every action above returns one. Once it settles the work is genuinely done,
+// so flush and exit rather than waiting for the event loop to drain: a single
+// stray handle would otherwise leave the terminal hanging on a finished
+// command, which is indistinguishable from "still working".
+program.parseAsync()
+  .then(() => exitWhenFlushed())
+  .catch((err) => {
+    console.error(chalk.red(`\n  ${err?.message || err}\n`));
+    if (process.env.SDD_DEBUG === '1' && err?.stack) console.error(chalk.dim(err.stack));
+    return exitWhenFlushed(1);
+  });

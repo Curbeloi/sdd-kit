@@ -17,7 +17,8 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
   const spec = readSpec(cwd, specName);
   if (!spec) {
     console.error(chalk.red(`\n  Spec not found: ${specName}`));
-    console.log(chalk.dim(`  Expected: specs/features/${specName}/tasks.md\n`));
+    console.log(chalk.dim(`  Run \`sdd spec list\` to see available specs.\n`));
+    process.exitCode = 1;
     return;
   }
 
@@ -72,7 +73,7 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
     try {
       await executeTask({ prompt, cwd, onProgress });
       spinner.succeed(`Task ${task.id} executed by Claude Code`);
-      console.log(chalk.dim(`  Check specs/features/${specName}/tasks.md for updated status.`));
+      console.log(chalk.dim(`  Check ${path.relative(cwd, spec.dir)}/tasks.md for updated status.`));
 
       // Post-task: detect what actually changed via git diff
       const changes = getChangedSince(snapshot, cwd);
@@ -120,10 +121,11 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
       onProgress.stop();
       spinner.fail(`Task ${task.id} failed`);
       console.error(chalk.red(`\n  ${err.message}`));
+      process.exitCode = 1;
     }
   } else {
-    // Fallback: save prompt to file
-    const promptDir = path.join(cwd, 'specs', 'features', specName);
+    // Fallback: save prompt into the spec's own directory (wherever it lives).
+    const promptDir = spec.dir;
     fs.mkdirSync(promptDir, { recursive: true });
     const promptPath = path.join(promptDir, `execute_${task.id}_prompt.md`);
     fs.writeFileSync(promptPath, prompt, 'utf-8');

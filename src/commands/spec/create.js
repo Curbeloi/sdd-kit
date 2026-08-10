@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import { execSync } from 'child_process';
+import { specDestDir } from '../../core/spec-reader.js';
 
 const LEVEL_FILES = {
   1: ['tasks.md'],
@@ -61,7 +62,8 @@ export async function createCmd({ description, name, level = 2, cwd = process.cw
     process.exit(1);
   }
 
-  const specDir = path.join(cwd, 'specs', 'features', specName);
+  const specDir = specDestDir(cwd, specName);
+  const relDir = path.relative(cwd, specDir);
 
   if (fs.existsSync(specDir)) {
     const existing = fs.readdirSync(specDir).filter(f => f.endsWith('.md'));
@@ -75,7 +77,7 @@ export async function createCmd({ description, name, level = 2, cwd = process.cw
   const files = LEVEL_FILES[level] || LEVEL_FILES[2];
 
   const levelLabel = { 1: chalk.red('-1 tasks'), 2: chalk.yellow('-2 req+tasks'), 3: chalk.green('-3 full') }[level];
-  console.log(`\n${chalk.bold('sdd spec create')} — ${chalk.cyan(specName)} (${levelLabel})\n`);
+  console.log(`\n${chalk.bold('sdd spec create')} — ${chalk.cyan(specName)} (${levelLabel})  ${chalk.dim(relDir + '/')}\n`);
 
   fs.mkdirSync(specDir, { recursive: true });
 
@@ -85,7 +87,7 @@ export async function createCmd({ description, name, level = 2, cwd = process.cw
   for (const file of files) {
     const content = buildHeader(file, specName, { description, author, date });
     fs.writeFileSync(path.join(specDir, file), content, 'utf-8');
-    console.log(`  ${chalk.green('created')} specs/features/${specName}/${file}`);
+    console.log(`  ${chalk.green('created')} ${relDir}/${file}`);
   }
 
   console.log('');

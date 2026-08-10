@@ -13,23 +13,28 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        # Floor is the oldest maintained LTS (see `engines.node` in package.json);
+        # chalk 6, commander 15 and openai 7 all require Node >= 22.
+        node-version: [22, 24]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run tests
-        run: npm test
+        run: pnpm test
 
       - name: Verify CLI entry point
         run: node bin/sdd.js --version
@@ -42,18 +47,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Full history: the three-dot diff below needs a merge base, and the
+          # default shallow clone leaves base and head with no common ancestor.
+          fetch-depth: 0
 
       - name: Check for SDD spec in PR
         run: |
-          # Get list of changed files in this PR
-          git fetch origin ${{ github.base_ref }} --depth=1
+          # Files this PR touches, relative to where it forked off the base branch
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
 
           # Check if only docs/deps were changed (spec not required)
           DOCS_ONLY=true
           for file in $CHANGED_FILES; do
             case "$file" in
-              *.md|package-lock.json|.github/*) ;;
+              *.md|pnpm-lock.yaml|.github/*) ;;
               *) DOCS_ONLY=false; break ;;
             esac
           done
