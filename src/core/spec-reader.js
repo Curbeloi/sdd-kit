@@ -104,19 +104,28 @@ export function readSpec(cwd, specName) {
  */
 function readSpecAt(specName, dir) {
   const files = {};
+  let mtime = 0;
+
+  const stamp = (fp) => {
+    try { mtime = Math.max(mtime, fs.statSync(fp).mtimeMs); } catch { /* unreadable — leave as-is */ }
+  };
+
   for (const f of ['requirements.md', 'design.md']) {
     const fp = path.join(dir, f);
     if (fs.existsSync(fp)) {
       const content = fs.readFileSync(fp, 'utf-8');
       if (content.trim()) files[f.replace('.md', '')] = content;
+      stamp(fp);
     }
   }
 
   const tasksPath = path.join(dir, 'tasks.md');
-  const tasksContent = fs.existsSync(tasksPath) ? fs.readFileSync(tasksPath, 'utf-8') : '';
+  const hasTasks = fs.existsSync(tasksPath);
+  const tasksContent = hasTasks ? fs.readFileSync(tasksPath, 'utf-8') : '';
+  if (hasTasks) stamp(tasksPath);
   const tasks = parseTasks(tasksContent);
 
-  return { name: specName, dir, files, tasks, tasksContent };
+  return { name: specName, dir, files, tasks, tasksContent, mtime };
 }
 
 /**

@@ -45,6 +45,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Full history: the three-dot diff below needs a merge base, and the
+          # default shallow clone leaves base and head with no common ancestor.
+          fetch-depth: 0
+
+      - name: Check for SDD spec in PR
+        run: |
+          # Files this PR touches, relative to where it forked off the base branch
 
       - name: Check for SDD spec in PR
         run: |

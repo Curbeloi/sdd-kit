@@ -376,17 +376,44 @@ Renames a spec directory and updates internal Markdown headers.
 sdd spec rename feat-old-name feat-new-name
 ```
 
-### `sdd spec archive <name>`
+### `sdd spec archive [name]`
 
-Moves a spec to `specs/archived/` to keep it out of `sdd spec status` and `sdd arch`. Use `--restore` to bring it back.
+Moves specs to `specs/archived/`, which every reader skips — so archived specs stop counting
+toward `sdd spec status` and stop consuming the `sdd arch` context budget. Nothing is deleted.
+
+Feature specs accumulate forever: every fix, chore and experiment leaves one behind. Past a few
+hundred they no longer fit in a model's context and `sdd arch` has to condense them. Archiving
+finished work is how you keep the architecture view sharp.
 
 ```bash
-# Archive a completed spec
+# Archive one spec
 sdd spec archive feat-jwt-auth
 
-# Restore it later
+# See what a bulk archive would move — nothing is touched
+sdd spec archive --completed --dry-run
+
+# Archive every spec whose tasks are all checked off
+sdd spec archive --completed
+
+# Archive specs untouched since a date
+sdd spec archive --before 2026-01-01
+
+# Combine: finished *and* stale
+sdd spec archive --completed --before 2026-01-01
+
+# Restore one later
 sdd spec archive feat-jwt-auth --restore
 ```
+
+| Flag | Effect |
+|------|--------|
+| `--completed` | Selects specs with at least one task where **all** tasks are done |
+| `--before <date>` | Selects specs untouched since `<date>` (`YYYY-MM-DD`) |
+| `--dry-run` | Lists what would move; changes nothing |
+| `--restore` | Moves one spec back out of `specs/archived/` |
+
+A spec with an empty `tasks.md` is treated as unstarted, not finished, so `--completed` never
+archives work that was never done.
 
 ### `sdd arch`
 
@@ -400,12 +427,38 @@ Generates architecture views from all specs, module docs, and steering docs. Pro
 # Generate architecture views
 sdd arch
 
+# Emphasize a level — every section is still produced, this shifts the depth
+sdd arch --level services      # system (default) | services | modules
+
+# Ask for a detailed sequence diagram for one feature
+sdd arch --flow feat-jwt-auth
+
 # Without Claude Code
 sdd arch --prompt-only
 
 # Open the dashboard
 open specs/_arch/dashboard.html
 ```
+
+`--level` and `--flow` change emphasis, never coverage: the dashboard renders every
+view, so suppressing a section would leave blanks. A `--flow` that matches no spec is
+an error (with a near-match suggestion), not a silently ignored flag.
+
+**Large spec corpora.** The whole corpus can't be sent to the model verbatim — past roughly 300
+feature specs it exceeds the context window. `sdd arch` spends a character budget
+(`arch_max_prompt_chars`, default 300,000 ≈ 75k tokens) in priority order: steering docs first,
+then module specs, then feature specs. If the feature tier doesn't fit whole it degrades — full
+text → summaries → names and task counts — and the run tells you what happened:
+
+```
+Corpus trimmed to fit the model context (~75,000 tokens).
+  332 feature spec(s) condensed to their summaries.
+```
+
+The agent keeps `Read` access, so the prompt points it at the full specs on disk for anything it
+needs in detail. To get richer input back, prune the corpus with
+[`sdd spec archive --completed`](#sdd-spec-archive-name) rather than raising the budget past what
+your model can hold.
 
 ### `sdd config`
 

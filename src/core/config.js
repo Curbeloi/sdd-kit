@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { debugLog } from './log.js';
+import { DEFAULT_ARCH_PROMPT_BUDGET } from './arch-prompt.js';
 
 const DEFAULTS = {
   specs_dir: 'specs/features',

@@ -14,7 +14,7 @@ import { refreshCmd }  from './commands/spec/refresh.js';
 import { listCmd }     from './commands/spec/list.js';
 import { deleteCmd }   from './commands/spec/delete.js';
 import { renameCmd }   from './commands/spec/rename.js';
-import { archiveCmd }  from './commands/spec/archive.js';
+import { archiveCmd, parseBeforeDate } from './commands/spec/archive.js';
 import { archCmd }     from './commands/arch.js';
 import { configCmd }   from './commands/config.js';
 import { doctorCmd }   from './commands/doctor.js';
@@ -198,7 +198,7 @@ ${chalk.bold(t.examples)}
   .action((description, opts) => {
     applyProviderFlags(opts);
     const level = opts[1] ? 1 : opts[3] ? 3 : 2;
-    createCmd({ description, name: opts.name, level });
+    return createCmd({ description, name: opts.name, level });
   });
 
 spec
@@ -251,7 +251,7 @@ ${chalk.bold(t.examples)}
   sdd spec status feat-jwt-auth --verbose
   `)
   .action((specName, opts) => {
-    statusCmd({ specName, verbose: opts.verbose });
+    return statusCmd({ specName, verbose: opts.verbose });
   });
 
 spec
@@ -286,7 +286,7 @@ spec
   .command('list')
   .description(isES ? 'Listar todos los specs' : 'List all specs')
   .action(() => {
-    listCmd();
+    return listCmd();
   });
 
 spec
@@ -294,22 +294,45 @@ spec
   .description(isES ? 'Eliminar un spec' : 'Delete a spec')
   .option('--force', isES ? 'Borrar sin confirmación' : 'Delete without confirmation')
   .action((name, opts) => {
-    deleteCmd({ specName: name, force: opts.force || false });
+    return deleteCmd({ specName: name, force: opts.force || false });
   });
 
 spec
   .command('rename <old> <new>')
   .description(isES ? 'Renombrar un spec' : 'Rename a spec')
   .action((oldName, newName) => {
-    renameCmd({ oldName, newName });
+    return renameCmd({ oldName, newName });
   });
 
 spec
-  .command('archive <name>')
-  .description(isES ? 'Archivar un spec completado' : 'Archive a completed spec')
+  .command('archive [name]')
+  .description(isES ? 'Archivar specs completados (saca del corpus de arch)' : 'Archive completed specs (removes them from the arch corpus)')
   .option('--restore', isES ? 'Restaurar spec archivado' : 'Restore archived spec')
+  .option('--completed', isES ? 'Archivar todos los specs con todas sus tareas hechas' : 'Archive every spec whose tasks are all done')
+  .option('--before <date>', isES ? 'Archivar specs sin cambios desde esta fecha (YYYY-MM-DD)' : 'Archive specs untouched since this date (YYYY-MM-DD)')
+  .option('--dry-run', isES ? 'Mostrar qué se archivaría sin mover nada' : 'List what would be archived without moving anything')
+  .addHelpText('after', `
+${chalk.bold(t.examples)}
+  sdd spec archive feat-jwt-auth               ${chalk.dim('→ archive one spec')}
+  sdd spec archive --completed --dry-run       ${chalk.dim('→ preview finished specs')}
+  sdd spec archive --completed                 ${chalk.dim('→ prune the arch corpus')}
+  sdd spec archive --before 2026-01-01         ${chalk.dim('→ archive stale specs')}
+  sdd spec archive feat-jwt-auth --restore     ${chalk.dim('→ bring one back')}
+  `)
   .action((name, opts) => {
-    archiveCmd({ specName: name, restore: opts.restore || false });
+    const before = parseBeforeDate(opts.before);
+    if (opts.before && !before) {
+      console.error(chalk.red(`\n  Invalid --before date: ${opts.before} (expected YYYY-MM-DD)\n`));
+      process.exitCode = 1;
+      return;
+    }
+    return archiveCmd({
+      specName: name,
+      restore: opts.restore || false,
+      completed: opts.completed || false,
+      before,
+      dryRun: opts.dryRun || false,
+    });
   });
 
 // ─── sdd arch ─────────────────────────────────────────────────────────────
@@ -317,7 +340,7 @@ spec
 program
   .command('arch')
   .description(t.archDesc)
-  .option('-l, --level <level>',  t.archOptLevel, 'system')
+  .addOption(new Option('-l, --level <level>', t.archOptLevel).choices(ARCH_LEVELS).default('system'))
   .option('-f, --flow <feature>', t.archOptFlow)
   .option('-o, --output <path>',  t.archOptOutput)
   .option('-p, --prompt-only',    t.archOptPrompt)
@@ -363,7 +386,7 @@ program
   .command('config')
   .description(isES ? 'Mostrar configuración activa' : 'Show active configuration')
   .action(() => {
-    configCmd();
+    return configCmd();
   });
 
 // ─── sdd doctor ────────────────────────────────────────────────────────────

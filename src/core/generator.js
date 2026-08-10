@@ -117,8 +117,51 @@ async function callAgentCli(prompt, { cwd, allowedTools = 'Read,Write,Glob,Grep'
     const proc = spawn(descriptor.command, args, {
       cwd,
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [viaStdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+
+    // Every exit path funnels through here so no handle outlives the call:
+    // a live timer or an undrained pipe keeps the event loop — and therefore
+    // the whole CLI — alive long after the command has printed its result.
+    let settled = false;
+    let timer;
+    const cleanup = () => {
+      clearTimeout(timer);
+      for (const stream of [proc.stdin, proc.stdout, proc.stderr]) {
+        if (stream && !stream.destroyed) stream.destroy();
+      }
+      proc.removeAllListeners();
+      // An 'error' with no listener throws. Node emits one when a kill fails,
+      // which is exactly what the next lines might do.
+      proc.on('error', (err) => debugLog('generator', `post-settle child error: ${err.message}`));
+      // Sole owner of termination, so the escalation actually gets its grace
+      // period. Only reached when we settle early (timeout); a normal close has
+      // already set exitCode.
+      if (proc.exitCode === null && proc.signalCode === null) {
+        proc.kill('SIGTERM');
+        const killTimer = setTimeout(() => proc.kill('SIGKILL'), KILL_GRACE_MS);
+        killTimer.unref();
+      }
+      proc.unref();   // a lingering child must not hold the CLI open
+    };
+    const settle = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      // Always release the progress heartbeat, whatever happened. Callers wire
+      // this to an interval-driven spinner; if `done` never arrives the interval
+      // never clears and the process hangs on success.
+      if (onProgress) { try { onProgress({ done: true, cost: lastCost }); } catch { /* display only */ } }
+      cleanup();
+      fn(value);
+    };
+
+    if (viaStdin) {
+      // A dead child turns this write into EPIPE; the close/error handler owns
+      // the failure, so swallow it here rather than crashing the CLI.
+      proc.stdin.on('error', (err) => debugLog('generator', `stdin write failed: ${err.message}`));
+      proc.stdin.end(prompt, 'utf-8');
+    }
+
     let fullOutput = '';
     let lastText = '';
     let buffer = '';
@@ -326,88 +369,6 @@ What this depends on.
 Anything important about implementation choices.
 `;
 
-// ─── Architecture ─────────────────────────────────────────────────────────
-
-function buildArchPrompt({ moduleSpecs, steering, featureSpecs }) {
-  const parts = [];
-
-  parts.push('Analyze the following project documentation and generate architecture views.\n');
-
-  // Module specs (living documentation per directory)
-  if (moduleSpecs && Object.keys(moduleSpecs).length) {
-    parts.push('## Module Specs (per-directory analysis)\n');
-    for (const [name, content] of Object.entries(moduleSpecs)) {
-      parts.push(`### Module: ${name}\n${content.slice(0, 3000)}\n`);
-    }
-  }
-
-  // Steering docs
-  if (steering && Object.keys(steering).length) {
-    parts.push('## Steering Documents\n');
-    for (const [name, content] of Object.entries(steering)) {
-      parts.push(`### ${name}\n${content.slice(0, 2000)}\n`);
-    }
-  }
-
-  // Feature specs
-  if (featureSpecs && featureSpecs.length) {
-    parts.push('## Feature Specs\n');
-    for (const spec of featureSpecs) {
-      parts.push(`### Feature: ${spec.name}`);
-      if (spec.files.requirements) parts.push(spec.files.requirements.slice(0, 1500));
-      if (spec.files.design) parts.push(spec.files.design.slice(0, 1500));
-      const done = spec.tasks.filter(t => t.done).length;
-      parts.push(`Tasks: ${done}/${spec.tasks.length} complete\n`);
-    }
-  }
-
-  parts.push(`---
-
-Based on the documentation above, create specs/_arch/architecture.md with Mermaid diagrams.
-
-Use these exact section headers:
-
-### SECTION: OVERVIEW
-\`\`\`mermaid
-graph TD
-  [System-level components and relationships]
-\`\`\`
-
-### SECTION: SERVICES
-\`\`\`mermaid
-graph LR
-  [Service-to-service relationships and data flow]
-\`\`\`
-
-### SECTION: FLOWS
-For each major feature or data flow:
-#### Flow: {feature-name}
-\`\`\`mermaid
-sequenceDiagram
-  [participants and interactions]
-\`\`\`
-
-### SECTION: MODULES
-\`\`\`mermaid
-graph TD
-  [Module/component breakdown]
-\`\`\`
-
-### SECTION: SUMMARY
-A JSON object (no markdown fences):
-{
-  "system_name": "string",
-  "description": "string",
-  "components": [{"name": "string", "type": "service|module|store|external", "description": "string"}],
-  "features": [{"name": "string", "status": "complete|in-progress|planned", "tasks_done": 0, "tasks_total": 0}],
-  "tech_stack": ["string"],
-  "key_decisions": ["string"]
-}
-`);
-
-  return parts.join('\n');
-}
-
 // ─── Public API ───────────────────────────────────────────────────────────
 
 export async function generateCreateSpec({ description, specName, size, projectContext, promptOnly, cwd, onProgress }) {
@@ -448,7 +409,7 @@ export async function generateArchitecture({ promptOnly, cwd, moduleSpecs, steer
     return { mode, raw };
   }
 
-  return { mode, prompt };
+  return { mode, prompt, stats };
 }
 
 export function generateExecutePrompt({ spec, task, requirements, design, moduleContext }) {
