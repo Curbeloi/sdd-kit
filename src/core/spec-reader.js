@@ -100,12 +100,7 @@ export function readSpec(cwd, specName) {
 }
 
 /**
- * Read a spec from a known absolute directory.
- * Shape: { name, dir, files, tasks, tasksContent, mtime }.
- *
- * `mtime` is the newest mtime across the spec's files (epoch ms, 0 if unknown).
- * Callers that have to drop specs to fit a budget — `sdd arch` — use it to keep
- * the most recently touched work.
+ * Read a spec from a known absolute directory. Shape: { name, dir, files, tasks, tasksContent }.
  */
 function readSpecAt(specName, dir) {
   const files = {};

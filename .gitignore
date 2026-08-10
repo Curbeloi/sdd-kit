@@ -23,23 +23,8 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-.env
-
-# Playwright
-test-results/
-playwright-report/
-playwright/.cache/
-
-# AI — Claude Code config and instructions are personal, not shared (see 4f0e750).
-# To share project-level config instead, replace `.claude/` with `.claude/*` plus
-# `!.claude/settings.json` etc. — but note that `.claude/` ignores the whole
-# directory, so git never descends into it and any negation below it is dead.
+*.log
+package-lock.json
 .claude/
 CLAUDE.md
 

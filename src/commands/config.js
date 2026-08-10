@@ -19,7 +19,6 @@ export function configCmd({ cwd = process.cwd() } = {}) {
     ['concurrency',   config.concurrency, defaults.concurrency],
     ['max_file_size', config.maxFileSize, defaults.max_file_size],
     ['max_depth',     config.maxDepth,    defaults.max_depth],
-    ['arch_max_prompt_chars', config.archMaxPromptChars, defaults.arch_max_prompt_chars],
     // LLM provider (text-generation layer)
     ['provider',      config.provider,    defaults.provider],
     ['model',         config.model,       defaults.model],
@@ -28,7 +27,6 @@ export function configCmd({ cwd = process.cwd() } = {}) {
     // Agentic execution layer
     ['agent_cli',     config.agentCli,    defaults.agent_cli],
     ['agent_model',   config.agentModel,  defaults.agent_model],
-    ['agent_max_budget_usd', config.agentMaxBudgetUsd, defaults.agent_max_budget_usd],
   ];
 
   for (const [key, value, defaultVal] of display) {

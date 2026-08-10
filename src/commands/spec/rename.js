@@ -12,7 +12,6 @@ export function renameCmd({ oldName, newName, cwd = process.cwd() }) {
 
   if (!oldDir) {
     console.error(chalk.red(`\n  Spec not found: ${oldName}\n`));
-    process.exitCode = 1;
     return;
   }
 
@@ -22,7 +21,6 @@ export function renameCmd({ oldName, newName, cwd = process.cwd() }) {
   if (fs.existsSync(newDir)) {
     console.error(chalk.red(`\n  Destination already exists: ${newName}`));
     console.log(chalk.dim(`  Path: ${path.relative(cwd, newDir)}/\n`));
-    process.exitCode = 1;
     return;
   }
 

@@ -23,7 +23,6 @@ export async function deleteCmd({ specName, force = false, cwd = process.cwd() }
 
   if (!specDir) {
     console.error(chalk.red(`\n  Spec not found: ${specName}\n`));
-    process.exitCode = 1;
     return;
   }
 

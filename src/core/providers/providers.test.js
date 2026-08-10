@@ -105,6 +105,7 @@ describe('openai-provider', () => {
 describe('agentic CLI descriptors (generator.AGENT_CLIS)', () => {
   it('claude buildArgs includes model and budget when provided', () => {
     const args = AGENT_CLIS.claude.buildArgs({ prompt: 'hi', model: 'sonnet', allowedTools: 'Read', maxBudget: 0.5 });
+    assert.deepEqual(args.slice(0, 2), ['-p', 'hi']);
     assert.ok(args.includes('--model'));
     assert.equal(args[args.indexOf('--model') + 1], 'sonnet');
     assert.ok(args.includes('--max-budget-usd'));
@@ -117,22 +118,10 @@ describe('agentic CLI descriptors (generator.AGENT_CLIS)', () => {
     assert.ok(!args.includes('--model'));
   });
 
-  it('claude sends the prompt over stdin, never in argv', () => {
-    // argv is capped at ~1 MB (ARG_MAX, shared with the environment); a large
-    // repo's arch corpus blows past that, so the prompt must not appear here.
-    const prompt = 'x'.repeat(5000);
-    const args = AGENT_CLIS.claude.buildArgs({ prompt, model: 'sonnet' });
-    assert.equal(AGENT_CLIS.claude.promptVia, 'stdin');
-    assert.ok(!args.includes(prompt), 'prompt must not be passed as an argument');
-    assert.equal(args[0], '-p', '-p with no value makes claude read stdin');
-    assert.ok(args.join(' ').length < 200, 'argv should stay small regardless of prompt size');
-  });
-
   it('opencode buildArgs uses the run subcommand', () => {
     const args = AGENT_CLIS.opencode.buildArgs({ prompt: 'do it', model: 'anthropic/claude' });
     assert.equal(args[0], 'run');
     assert.equal(args[1], 'do it');
     assert.ok(args.includes('--model'));
-    assert.equal(AGENT_CLIS.opencode.promptVia, 'argv');
   });
 });

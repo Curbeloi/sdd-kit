@@ -11,7 +11,6 @@ export async function statusCmd({ specName, verbose, cwd = process.cwd() }) {
     if (!spec) {
       console.error(chalk.red(`\n  Spec not found: ${specName}`));
       console.log(chalk.dim(`  Run \`sdd spec list\` to see available specs.\n`));
-      process.exitCode = 1;
       return;
     }
     console.log(`\n${chalk.bold('sdd spec status')} — ${chalk.cyan(specName)}\n`);

@@ -18,7 +18,6 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
   if (!spec) {
     console.error(chalk.red(`\n  Spec not found: ${specName}`));
     console.log(chalk.dim(`  Run \`sdd spec list\` to see available specs.\n`));
-    process.exitCode = 1;
     return;
   }
 

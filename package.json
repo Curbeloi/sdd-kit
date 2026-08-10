@@ -1,7 +1,7 @@
 {
   "name": "sdd-kit",
   "version": "0.9.0",
-  "description": "Spec-Driven Development CLI \u2014 language-agnostic, works with any project",
+  "description": "Spec-Driven Development CLI — language-agnostic, works with any project",
   "keywords": [
     "sdd",
     "spec-driven",
@@ -22,7 +22,7 @@
     "url": "git+https://github.com/Curbeloi/sdd-kit.git"
   },
   "type": "module",
-  "packageManager": "pnpm@11.9.0",
+  "packageManager": "pnpm@10.12.1",
   "bin": {
     "sdd": "bin/sdd.js"
   },
@@ -33,7 +33,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test src/*.test.js src/core/*.test.js src/core/providers/*.test.js src/commands/*.test.js src/commands/spec/*.test.js"
+    "test": "node --test src/core/*.test.js src/core/providers/*.test.js src/commands/*.test.js src/commands/spec/*.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
@@ -43,6 +43,14 @@
   },
   "peerDependencies": {
     "openai": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "openai": {
+      "optional": true
+    }
+  },
+  "peerDependencies": {
+    "openai": "^4.0.0"
   },
   "peerDependenciesMeta": {
     "openai": {

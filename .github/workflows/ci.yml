@@ -13,9 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        # Floor is the oldest maintained LTS (see `engines.node` in package.json);
-        # chalk 6, commander 15 and openai 7 all require Node >= 22.
-        node-version: [22, 24]
+        node-version: [18, 20, 22]
 
     steps:
       - name: Checkout code
@@ -55,6 +53,11 @@ jobs:
       - name: Check for SDD spec in PR
         run: |
           # Files this PR touches, relative to where it forked off the base branch
+
+      - name: Check for SDD spec in PR
+        run: |
+          # Get list of changed files in this PR
+          git fetch origin ${{ github.base_ref }} --depth=1
           CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
 
           # Check if only docs/deps were changed (spec not required)

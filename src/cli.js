@@ -20,8 +20,6 @@ import { configCmd }   from './commands/config.js';
 import { doctorCmd }   from './commands/doctor.js';
 import { providerListCmd, providerSetCmd, providerModelsCmd } from './commands/provider.js';
 import { setOverrides } from './core/config.js';
-import { exitWhenFlushed } from './core/shutdown.js';
-import { ARCH_LEVELS } from './core/arch-prompt.js';
 
 // Apply per-command LLM overrides (--provider / --model) at highest precedence.
 const applyProviderFlags = (opts) => setOverrides({ provider: opts.provider, model: opts.model });
@@ -218,7 +216,7 @@ ${chalk.bold(t.examples)}
   `)
   .action((source, opts) => {
     applyProviderFlags(opts);
-    return documentCmd({ source, name: opts.name, promptOnly: opts.promptOnly || false });
+    documentCmd({ source, name: opts.name, promptOnly: opts.promptOnly || false });
   });
 
 spec
@@ -240,7 +238,7 @@ ${chalk.bold(t.examples)}
   `)
   .action((specName, opts) => {
     applyProviderFlags(opts);
-    return executeCmd({ specName, taskId: opts.task, dryRun: opts.dryRun, promptOnly: opts.promptOnly, refreshMode: opts.refresh });
+    executeCmd({ specName, taskId: opts.task, dryRun: opts.dryRun, promptOnly: opts.promptOnly, refreshMode: opts.refresh });
   });
 
 spec
@@ -275,7 +273,7 @@ ${chalk.bold(t.examples)}
   `)
   .action((dir, opts) => {
     applyProviderFlags(opts);
-    return refreshCmd({
+    refreshCmd({
       dir,
       promptOnly: opts.promptOnly || false,
       verbose: opts.verbose || false,
@@ -361,7 +359,7 @@ ${chalk.bold(t.examples)}
   `)
   .action((opts) => {
     applyProviderFlags(opts);
-    return archCmd({ level: opts.level, flow: opts.flow, output: opts.output, promptOnly: opts.promptOnly || false });
+    archCmd({ level: opts.level, flow: opts.flow, output: opts.output, promptOnly: opts.promptOnly || false });
   });
 
 // ─── sdd init ─────────────────────────────────────────────────────────────
@@ -379,7 +377,7 @@ ${chalk.bold(t.examples)}
   `)
   .action((opts) => {
     applyProviderFlags(opts);
-    return import('./commands/init.js').then(m => m.initCmd({ auto: opts.auto || false }));
+    import('./commands/init.js').then(m => m.initCmd({ auto: opts.auto || false }));
   });
 
 // ─── sdd config ──────────────────────────────────────────────────────────
@@ -429,7 +427,7 @@ ${chalk.bold(t.examples)}
   sdd provider set vllm --model meta-llama/Llama-3.1-8B-Instruct --base-url http://localhost:8000/v1
   `)
   .action((providerName, opts) => {
-    return providerSetCmd({ provider: providerName, model: opts.model, baseUrl: opts.baseUrl, apiKeyEnv: opts.apiKeyEnv });
+    providerSetCmd({ provider: providerName, model: opts.model, baseUrl: opts.baseUrl, apiKeyEnv: opts.apiKeyEnv });
   });
 
 provider
@@ -441,15 +439,4 @@ provider
     await providerModelsCmd({ provider: opts.provider, refresh: opts.refresh });
   });
 
-// `parseAsync` (not `parse`) so the command's promise is actually awaited —
-// every action above returns one. Once it settles the work is genuinely done,
-// so flush and exit rather than waiting for the event loop to drain: a single
-// stray handle would otherwise leave the terminal hanging on a finished
-// command, which is indistinguishable from "still working".
-program.parseAsync()
-  .then(() => exitWhenFlushed())
-  .catch((err) => {
-    console.error(chalk.red(`\n  ${err?.message || err}\n`));
-    if (process.env.SDD_DEBUG === '1' && err?.stack) console.error(chalk.dim(err.stack));
-    return exitWhenFlushed(1);
-  });
+program.parse();
