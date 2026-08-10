@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 import path from 'path';
 import { getConfig, resetConfig, getDefaults, setOverrides, writeRc } from './config.js';
+import { DEFAULT_ARCH_PROMPT_BUDGET } from './arch-prompt.js';
 import { withTempDir } from '../test-helpers.js';
 
 beforeEach(() => {
@@ -209,6 +210,45 @@ describe('writeRc', () => {
       fs.writeFileSync(path.join(dir, '.sddrc'), 'not json {', 'utf-8');
       const merged = writeRc(dir, { provider: 'vllm' });
       assert.deepEqual(merged, { provider: 'vllm' });
+    });
+  });
+});
+
+describe('arch corpus budget + agent spend cap', () => {
+  it('defaults to the shared arch prompt budget', async () => {
+    await withTempDir((dir) => {
+      resetConfig();
+      assert.equal(getConfig(dir).archMaxPromptChars, DEFAULT_ARCH_PROMPT_BUDGET);
+      assert.equal(getConfig(dir).agentMaxBudgetUsd, 1.0);
+    });
+  });
+
+  it('reads both from .sddrc', async () => {
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'),
+        JSON.stringify({ arch_max_prompt_chars: 120000, agent_max_budget_usd: 5 }), 'utf-8');
+      resetConfig();
+      assert.equal(getConfig(dir).archMaxPromptChars, 120000);
+      assert.equal(getConfig(dir).agentMaxBudgetUsd, 5);
+    });
+  });
+
+  it('falls back to the default when the value is unusable', async () => {
+    // A typo'd budget must not silently become 0 — that would send an empty corpus.
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'),
+        JSON.stringify({ arch_max_prompt_chars: 'lots', agent_max_budget_usd: 'plenty' }), 'utf-8');
+      resetConfig();
+      assert.equal(getConfig(dir).archMaxPromptChars, DEFAULT_ARCH_PROMPT_BUDGET);
+      assert.equal(getConfig(dir).agentMaxBudgetUsd, 1.0);
+    });
+  });
+
+  it('rejects a zero or negative budget', async () => {
+    await withTempDir((dir) => {
+      fs.writeFileSync(path.join(dir, '.sddrc'), JSON.stringify({ arch_max_prompt_chars: 0 }), 'utf-8');
+      resetConfig();
+      assert.equal(getConfig(dir).archMaxPromptChars, DEFAULT_ARCH_PROMPT_BUDGET);
     });
   });
 });

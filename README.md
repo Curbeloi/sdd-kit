@@ -31,7 +31,7 @@ sdd doctor                               # check your provider/CLI setup
 
 ## Requirements
 
-**Node.js >= 18** is the only hard requirement. For the AI engine, pick whatever you already use:
+**Node.js >= 22.23** (oldest maintained LTS) is the only hard requirement. For the AI engine, pick whatever you already use:
 
 - **Claude Code** *(default, recommended)* — the richest experience. Install: `npm install -g @anthropic-ai/claude-code`
 - **Anthropic API** — set `ANTHROPIC_API_KEY` for faster SDK mode (spec generation straight from the API)
@@ -495,11 +495,13 @@ Available options:
 | `specs_dir`, `modules_dir`, `steering_dir`, `arch_dir` | conventional paths | Where specs/maps/steering/arch live |
 | `concurrency` | `4` | Max parallel LLM requests |
 | `max_file_size`, `max_depth` | `50KB`, `8` | Scanner limits |
+| `arch_max_prompt_chars` | `300000` | Character budget for the `sdd arch` corpus (~75k tokens) |
 | `provider` | `auto` | Text-gen provider — see [LLM providers](#llm-providers-multi-provider) |
 | `model` | per-provider | Model for the text-gen layer |
 | `base_url`, `api_key_env` | per-provider | OpenAI-compatible endpoint + key env var |
 | `agent_cli` | `claude` | Agentic CLI for `create`/`execute`/`arch` (`claude` \| `opencode`) |
 | `agent_model` | inherit | Model for the agentic CLI (e.g. Claude Code alias `sonnet`/`opus`) |
+| `agent_max_budget_usd` | `1.0` | Spend cap per agentic run (`create`/`execute`/`arch`) |
 
 ### `sdd doctor`
 

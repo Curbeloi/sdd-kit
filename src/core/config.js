@@ -17,6 +17,10 @@ const DEFAULTS = {
   concurrency: 4,
   max_file_size: 50 * 1024,
   max_depth: 8,
+  // Character ceiling for the `sdd arch` corpus. Past this the spec corpus is
+  // condensed rather than sent whole — an unbounded prompt is what made arch
+  // fail outright on repos with hundreds of feature specs.
+  arch_max_prompt_chars: DEFAULT_ARCH_PROMPT_BUDGET,
   // LLM provider (text-generation layer)
   provider: 'auto',   // auto | anthropic | openai | ollama | vllm | claude-cli
   model: '',          // empty = per-provider default (Anthropic SDK -> claude-sonnet-4-6)
@@ -25,6 +29,7 @@ const DEFAULTS = {
   // Agentic execution layer (spec create/execute/arch)
   agent_cli: 'claude',  // claude | opencode
   agent_model: '',      // empty = inherit the CLI's own default (claude: Claude Code default). Else an alias (sonnet|opus|haiku|...)
+  agent_max_budget_usd: 1.0,  // spend cap per agentic run; a large spec corpus costs more than a small one
 };
 
 // Env var fallback for the provider-related keys (.sddrc still wins over env).
@@ -35,11 +40,19 @@ const ENV_KEYS = {
   api_key_env: 'SDD_API_KEY_ENV',
   agent_cli: 'SDD_AGENT_CLI',
   agent_model: 'SDD_AGENT_MODEL',
+  agent_max_budget_usd: 'SDD_AGENT_MAX_BUDGET_USD',
+  arch_max_prompt_chars: 'SDD_ARCH_MAX_PROMPT_CHARS',
 };
 
 let _cache = null;
 let _cacheCwd = null;
 let _overrides = {}; // highest-precedence values (e.g. from CLI flags)
+
+/** Coerce a config/env value to a positive integer, falling back when unusable. */
+function toPositiveInt(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
 
 /**
  * Read .sddrc from project root. Returns parsed object or empty.
@@ -91,6 +104,7 @@ export function getConfig(cwd = process.cwd()) {
     concurrency:  rc.concurrency   ?? DEFAULTS.concurrency,
     maxFileSize:  rc.max_file_size ?? DEFAULTS.max_file_size,
     maxDepth:     rc.max_depth     ?? DEFAULTS.max_depth,
+    archMaxPromptChars: toPositiveInt(resolve('arch_max_prompt_chars'), DEFAULTS.arch_max_prompt_chars),
     // LLM provider config (.sddrc > env > default)
     provider:    resolve('provider'),
     model:       resolve('model'),
@@ -98,6 +112,7 @@ export function getConfig(cwd = process.cwd()) {
     apiKeyEnv:   resolve('api_key_env'),
     agentCli:    resolve('agent_cli'),
     agentModel:  resolve('agent_model'),
+    agentMaxBudgetUsd: Number(resolve('agent_max_budget_usd')) || DEFAULTS.agent_max_budget_usd,
     // Track sources for `sdd config` display
     _sources: {},
   };
