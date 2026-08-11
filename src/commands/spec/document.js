@@ -4,19 +4,38 @@
  * Uses unified claude-api (SDK or CLI auto-detected):
  *   1. Scan locally → show plan
  *   2. Read files locally
- *   3. Parallel analysis — one request per directory → specs/_map/*.spec.md
- *   4. Final synthesis → unified spec
+ *   3. Parallel analysis — one request per directory, kept in memory
+ *   4. Final synthesis → specs/<type>/<name>/design.md
+ *
+ * The per-directory analyses are NOT written to `specs/_map/`. They are grouped
+ * relative to the *target*, while `spec refresh` names map specs relative to the
+ * *project root* and stamps them with a `source_hash`. Writing them here meant
+ * `sdd spec document app/agents/_common` clobbered the project's real
+ * `specs/_map/root.spec.md` with a spec about five unrelated files. `spec refresh`
+ * owns that directory; this command is a reader of code, not a map maintainer.
  */
 
 import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import ora from 'ora';
-import { scanTree, groupByDirectory, printPlan, readGroupFiles, buildGroupPrompt, buildSynthesisPrompt } from '../../core/scanner.js';
+import { scanTree, groupByDirectory, printPlan, readGroupFiles, buildGroupPrompt, buildSynthesisPrompt, buildDirectSpecPrompt } from '../../core/scanner.js';
 import { detectEngine, getEngineName, batchAsk, askClaude } from '../../core/claude-api.js';
+import { specDestDir } from '../../core/spec-reader.js';
 import { refreshSteering } from '../init.js';
 
-export async function documentCmd({ source, name, promptOnly, cwd = process.cwd() }) {
+/**
+ * `api` exists so the two model calls can be stubbed in tests. The interesting
+ * failure modes of this command — what it writes and where — only occur on the
+ * path that talks to a model, so without a seam they cannot be covered at all.
+ */
+export async function documentCmd({
+  source,
+  name,
+  promptOnly,
+  cwd = process.cwd(),
+  api = { batchAsk, askClaude, detectEngine, getEngineName },
+}) {
   const resolvedSource = path.resolve(cwd, source);
 
   if (!fs.existsSync(resolvedSource)) {
@@ -49,8 +68,8 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
     return savePromptOnly({ groups, resolvedSource, specName, cwd });
   }
 
-  const engine = detectEngine();
-  console.log(chalk.dim(`  Engine: ${getEngineName()}\n`));
+  const engine = api.detectEngine();
+  console.log(chalk.dim(`  Engine: ${api.getEngineName()}\n`));
 
   // ─── Phase 2: Parallel per-directory analysis ─────────────────
   console.log(chalk.bold('  Analyzing directories:\n'));
@@ -88,7 +107,7 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
 
   let results;
   try {
-    results = await batchAsk(items, {
+    results = await api.batchAsk(items, {
       maxTokens: 2000,
       cwd,
       onItemDone: (label, result, i, err) => {
@@ -100,14 +119,10 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
           console.error(chalk.dim(`      ${err.message}`));
           process.exitCode = 1;   // a partial analysis is not a success
         } else {
-          // Save module spec
-          const mapDir = path.join(cwd, 'specs', '_map');
-          fs.mkdirSync(mapDir, { recursive: true });
-          const specPath = path.join(mapDir, `${slugifyDir(label)}.spec.md`);
-          fs.writeFileSync(specPath, result, 'utf-8');
-
+          // Held in memory for synthesis only — see the header note on why this
+          // must not touch specs/_map/.
           const elapsed = Math.floor((Date.now() - startTimes.get(i)) / 1000);
-          spinner.succeed(`${prefix} ${chalk.blue(label)} ${chalk.green('done')} ${chalk.dim(`${elapsed}s → _map/${slugifyDir(label)}.spec.md`)}`);
+          spinner.succeed(`${prefix} ${chalk.blue(label)} ${chalk.green('done')} ${chalk.dim(`${elapsed}s`)}`);
         }
       },
     });
@@ -137,19 +152,22 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
   synthHeartbeat.unref();
 
   try {
-    const unified = await askClaude(
+    const unified = await api.askClaude(
       synthPrompt + '\n\nReturn ONLY the markdown content for the spec file. No explanation.',
       { maxTokens: 4000, cwd }
     );
 
-    const specsDir = path.join(cwd, 'specs');
-    fs.mkdirSync(specsDir, { recursive: true });
-    const specPath = path.join(specsDir, `${specName}.spec.md`);
+    // Into the spec's own directory, as design.md. A loose specs/<name>.spec.md
+    // is read by nothing: readAllSpecs enumerates spec *directories* and skips
+    // reserved ones, so the old path produced an orphan on every run.
+    const destDir = specDestDir(cwd, specName);
+    fs.mkdirSync(destDir, { recursive: true });
+    const specPath = path.join(destDir, 'design.md');
     fs.writeFileSync(specPath, unified, 'utf-8');
 
     const elapsed = Math.floor((Date.now() - synthStart) / 1000);
     spinnerSynth.succeed(`Unified spec created ${chalk.dim(`${elapsed}s`)}`);
-    console.log(`  ${chalk.green('created')} specs/${specName}.spec.md`);
+    console.log(`  ${chalk.green('created')} ${path.relative(cwd, specPath)}`);
 
     // Auto-refresh steering docs
     await refreshSteering({ cwd, silent: false });
@@ -157,9 +175,9 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
     spinnerSynth.fail('Synthesis failed');
     console.error(chalk.red(`  ${err.message}`));
 
-    const specsDir = path.join(cwd, 'specs');
-    fs.mkdirSync(specsDir, { recursive: true });
-    const promptPath = path.join(specsDir, `${specName}_synthesis_prompt.md`);
+    const destDir = specDestDir(cwd, specName);
+    fs.mkdirSync(destDir, { recursive: true });
+    const promptPath = path.join(destDir, 'synthesis_prompt.md');
     fs.writeFileSync(promptPath, synthPrompt, 'utf-8');
     console.log(chalk.dim(`  Prompt saved: ${path.relative(cwd, promptPath)}`));
     process.exitCode = 1;
@@ -176,18 +194,18 @@ export async function documentCmd({ source, name, promptOnly, cwd = process.cwd(
 // ─── Prompt-only fallback ─────────────────────────────────────────────────
 
 function savePromptOnly({ groups, resolvedSource, specName, cwd }) {
-  const partialSpecs = groups.map(group => {
-    const label = group.dir === '.' ? 'root' : group.dir;
-    const fileContents = readGroupFiles(resolvedSource, group);
-    const fileList = fileContents.map(f => `- \`${f.path}\``).join('\n');
-    return { dir: label, content: `# ${label}\n\n## Files\n${fileList}\n` };
-  });
+  // No analysis pass runs on this path, so the synthesis prompt is the wrong
+  // shape: it opens by asserting the directories were already analyzed, and the
+  // only thing available to fill it with is a file list. That combination told
+  // the model its analysis was done while handing it nothing but filenames.
+  // buildDirectSpecPrompt says the opposite out loud: read these files first.
+  const filePaths = groups.flatMap(group => group.files.map(f => f.rel));
 
-  const synthPrompt = buildSynthesisPrompt(specName, resolvedSource, partialSpecs);
-  const specsDir = path.join(cwd, 'specs');
-  fs.mkdirSync(specsDir, { recursive: true });
-  const promptPath = path.join(specsDir, `${specName}_document_prompt.md`);
-  fs.writeFileSync(promptPath, synthPrompt, 'utf-8');
+  const prompt = buildDirectSpecPrompt(specName, resolvedSource, filePaths);
+  const destDir = specDestDir(cwd, specName);
+  fs.mkdirSync(destDir, { recursive: true });
+  const promptPath = path.join(destDir, 'document_prompt.md');
+  fs.writeFileSync(promptPath, prompt, 'utf-8');
   console.log(chalk.dim(`  Prompt saved: ${path.relative(cwd, promptPath)}`));
   console.log(chalk.dim(`  Paste into Claude Code to generate the spec.\n`));
 }
@@ -201,8 +219,4 @@ function slugify(s) {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 40);
-}
-
-function slugifyDir(s) {
-  return s === '.' ? 'root' : s.replace(/[/\\]+/g, '-').toLowerCase();
 }

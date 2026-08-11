@@ -315,24 +315,9 @@ Important patterns or decisions.
 `;
 }
 
-/**
- * Build the final synthesis prompt from all partial specs.
- */
-export function buildSynthesisPrompt(specName, sourcePath, partialSpecs) {
-  const partials = partialSpecs.map(p =>
-    `---\n## Module: ${p.dir}\n${p.content}\n`
-  ).join('\n');
-
-  return `You have analyzed each directory of ${sourcePath} individually.
-Now synthesize everything into a unified spec document.
-
-${partials}
-
----
-
-Create the file specs/${specName}.spec.md with this format:
-
-# Spec: [Title — descriptive name for the whole system/module]
+// Shared output shape for both spec-producing prompts below. Kept in one place
+// so the `--prompt-only` prompt can never drift from what the real run asks for.
+const SPEC_FORMAT = `# Spec: [Title — descriptive name for the whole system/module]
 
 ## Purpose
 What this codebase does as a whole.
@@ -357,6 +342,57 @@ How data moves through the system.
 External dependencies (frameworks, libraries, services).
 
 ## Notes
-Important architectural decisions, patterns, or gotchas.
+Important architectural decisions, patterns, or gotchas.`;
+
+/**
+ * Build the final synthesis prompt from all partial specs.
+ *
+ * Only valid when `partialSpecs` really are per-directory analyses — the opening
+ * line asserts they exist. Callers with nothing but a file list must use
+ * `buildDirectSpecPrompt` instead; telling a model it already analyzed code it
+ * was never shown is how a spec gets written from filenames alone.
+ */
+export function buildSynthesisPrompt(specName, sourcePath, partialSpecs) {
+  const partials = partialSpecs.map(p =>
+    `---\n## Module: ${p.dir}\n${p.content}\n`
+  ).join('\n');
+
+  return `You have analyzed each directory of ${sourcePath} individually.
+Now synthesize everything into a unified spec document.
+
+${partials}
+
+---
+
+Write a unified spec for \`${specName}\` in this format:
+
+${SPEC_FORMAT}
+`;
+}
+
+/**
+ * Build a self-contained prompt for the `--prompt-only` path, where no analysis
+ * pass has run. The prompt carries file *paths*, not contents, so it must tell
+ * the agent to read them — it is meant to be pasted into an agent that has file
+ * access, and that read step is the only thing standing between it and a spec
+ * invented from filenames.
+ */
+export function buildDirectSpecPrompt(specName, sourcePath, filePaths) {
+  const fileList = filePaths.map(p => `- \`${p}\``).join('\n');
+
+  return `Reverse engineer ${sourcePath} into a unified spec.
+
+No analysis has been done yet. Read all ${filePaths.length} files listed below
+before writing anything — this prompt carries their paths, not their contents.
+Do not infer behaviour from a filename you have not opened.
+
+## Files (relative to ${sourcePath})
+${fileList}
+
+---
+
+Write a unified spec for \`${specName}\` in this format:
+
+${SPEC_FORMAT}
 `;
 }
