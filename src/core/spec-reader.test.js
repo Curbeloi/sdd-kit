@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   parseTasks, findNextPendingTask, readSpec, parseFrontmatter, stringifyFrontmatter,
-  specDestDir, resolveSpecDir, readAllSpecs,
+  specDestDir, resolveSpecDir, readAllSpecs, findUnparsedTaskLines, describeUnparsedTasks,
 } from './spec-reader.js';
 import { resetConfig } from './config.js';
 import { withTempDir, createMockSpec } from '../test-helpers.js';
@@ -92,6 +92,77 @@ Some description text
     assert.equal(tasks[0].done, false);
     assert.equal(tasks[1].done, true);
     assert.equal(tasks[2].file, null);
+  });
+});
+
+describe('findUnparsedTaskLines', () => {
+  // parseTasks drops any checkbox line that is not `- [ ] **1.2** text` at
+  // column 0. Dropped silently, a spec full of such lines reads as "no tasks".
+  it('reports checkbox lines that parseTasks drops, with their line number', () => {
+    const content = [
+      '# Tasks',                               // 1
+      '- [ ] **1.1** recognised `a.js`',       // 2
+      '  - [ ] **1.2** indented',              // 3
+      '* [ ] **1.3** star bullet',             // 4
+      '- [ ] 1.4 id without bold',             // 5
+      '- [x] **T5** non-numeric id',           // 6
+      '- [~] **1.6** unknown state',           // 7
+    ].join('\n');
+
+    assert.deepEqual(findUnparsedTaskLines(content), [
+      { line: 3, text: '  - [ ] **1.2** indented' },
+      { line: 4, text: '* [ ] **1.3** star bullet' },
+      { line: 5, text: '- [ ] 1.4 id without bold' },
+      { line: 6, text: '- [x] **T5** non-numeric id' },
+      { line: 7, text: '- [~] **1.6** unknown state' },
+    ]);
+  });
+
+  it('reports nothing for prose, plain bullets and recognised tasks', () => {
+    const content = [
+      '## Context',
+      'Text that mentions [ ] in passing.',
+      '- a plain bullet',
+      '- [ ] **1.1** pending `a.js` <- R1',
+      '- [x] **1.2** done',
+    ].join('\n');
+    assert.deepEqual(findUnparsedTaskLines(content), []);
+  });
+
+  it('handles CRLF files without flagging recognised tasks', () => {
+    assert.deepEqual(findUnparsedTaskLines('- [ ] **1.1** one\r\n- [x] **1.2** two\r\n'), []);
+  });
+
+  it('returns an empty list for empty content', () => {
+    assert.deepEqual(findUnparsedTaskLines(''), []);
+    assert.deepEqual(findUnparsedTaskLines(undefined), []);
+  });
+});
+
+describe('describeUnparsedTasks', () => {
+  it('returns nothing for a spec with no dropped lines', () => {
+    assert.deepEqual(describeUnparsedTasks({ unparsedTasks: [] }), []);
+  });
+
+  it('shows the first three dropped lines and counts the rest', () => {
+    const unparsedTasks = [11, 12, 13, 14, 15].map(line => ({ line, text: `* [ ] item ${line}` }));
+    const text = describeUnparsedTasks({ unparsedTasks }).join('\n');
+    assert.match(text, /line 11: \* \[ \] item 11/);
+    assert.match(text, /line 13: \* \[ \] item 13/);
+    assert.doesNotMatch(text, /item 14/);
+    assert.match(text, /\+2 more/);
+  });
+});
+
+describe('readSpec — unparsed task lines', () => {
+  it('exposes the dropped lines next to the parsed tasks', async () => {
+    await withTempDir(async (dir) => {
+      resetConfig();
+      createMockSpec(dir, 'feat-x', { tasks: '- [ ] **1.1** ok\n* [ ] **1.2** star\n' });
+      const spec = readSpec(dir, 'feat-x');
+      assert.equal(spec.tasks.length, 1);
+      assert.deepEqual(spec.unparsedTasks, [{ line: 2, text: '* [ ] **1.2** star' }]);
+    });
   });
 });
 

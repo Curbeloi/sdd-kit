@@ -61,3 +61,71 @@ describe('createCmd default level', () => {
     });
   });
 });
+
+describe('createCmd — rejected input', () => {
+  // process.exit() skips the CLI's flush-then-exit path, so a rejection could
+  // lose its own error message when stdout is a pipe. A rejection must set the
+  // exit code and return, like every other command.
+  const rejecting = async (fn) => {
+    const realExit = process.exit;
+    const savedCode = process.exitCode;
+    let exitCalled = false;
+    process.exit = () => { exitCalled = true; throw new Error('process.exit() was called'); };
+    try {
+      await fn();
+    } catch (err) {
+      if (!exitCalled) throw err;
+    } finally {
+      process.exit = realExit;
+    }
+    const exitCode = process.exitCode;
+    process.exitCode = savedCode;
+    return { exitCalled, exitCode };
+  };
+
+  it('reports a missing name through the exit code and returns', async () => {
+    await withTempDir(async (cwd) => {
+      const { exitCalled, exitCode } = await rejecting(() => createCmd({ cwd }));
+      assert.equal(exitCalled, false, 'createCmd must not call process.exit()');
+      assert.equal(exitCode, 1);
+    });
+  });
+
+  it('reports a description with no usable characters the same way', async () => {
+    await withTempDir(async (cwd) => {
+      const { exitCalled, exitCode } = await rejecting(() => createCmd({ description: '!!!', cwd }));
+      assert.equal(exitCalled, false, 'createCmd must not call process.exit()');
+      assert.equal(exitCode, 1);
+    });
+  });
+
+  it('reports an existing spec the same way and leaves it untouched', async () => {
+    await withTempDir(async (cwd) => {
+      await createCmd({ name: 'feat-dup', cwd });
+      const file = path.join(cwd, 'specs', 'features', 'feat-dup', 'tasks.md');
+      fs.writeFileSync(file, 'edited by hand');
+      const { exitCalled, exitCode } = await rejecting(() => createCmd({ name: 'feat-dup', cwd }));
+      assert.equal(exitCalled, false, 'createCmd must not call process.exit()');
+      assert.equal(exitCode, 1);
+      assert.equal(fs.readFileSync(file, 'utf-8'), 'edited by hand');
+    });
+  });
+});
+
+describe('createCmd — header date', () => {
+  it('uses the local calendar day, not the UTC one', async (t) => {
+    const savedTz = process.env.TZ;
+    process.env.TZ = 'America/Guayaquil';   // UTC-5, no daylight saving
+    // 22:30 on the 17th in Guayaquil; already the 18th in UTC.
+    t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-18T03:30:00Z') });
+    try {
+      await withTempDir(async (cwd) => {
+        await createCmd({ name: 'feat-date', cwd });
+        const tasks = fs.readFileSync(path.join(cwd, 'specs', 'features', 'feat-date', 'tasks.md'), 'utf-8');
+        assert.match(tasks, /Created: 2026-11-17\b/);
+      });
+    } finally {
+      if (savedTz === undefined) delete process.env.TZ; else process.env.TZ = savedTz;
+    }
+  });
+});

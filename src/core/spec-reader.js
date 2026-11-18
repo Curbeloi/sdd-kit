@@ -101,7 +101,7 @@ export function readSpec(cwd, specName) {
 
 /**
  * Read a spec from a known absolute directory.
- * Shape: { name, dir, files, tasks, tasksContent, mtime }.
+ * Shape: { name, dir, files, tasks, unparsedTasks, tasksContent, mtime }.
  *
  * `mtime` is the newest mtime across the spec's files (epoch ms, 0 if unknown).
  * Callers that have to drop specs to fit a budget — `sdd arch` — use it to keep
@@ -129,8 +129,9 @@ function readSpecAt(specName, dir) {
   const tasksContent = hasTasks ? fs.readFileSync(tasksPath, 'utf-8') : '';
   if (hasTasks) stamp(tasksPath);
   const tasks = parseTasks(tasksContent);
+  const unparsedTasks = findUnparsedTaskLines(tasksContent);
 
-  return { name: specName, dir, files, tasks, tasksContent, mtime };
+  return { name: specName, dir, files, tasks, unparsedTasks, tasksContent, mtime };
 }
 
 /**
@@ -164,23 +165,71 @@ export function readSteering(cwd) {
   return result;
 }
 
-export function parseTasks(content) {
-  if (!content) return [];
-  const tasks = [];
-  // Regex allows backtick-quoted terms inside descriptions.
-  // The LAST backtick-quoted value is captured as the file reference.
-  // Supports multi-level IDs (1.2.3) and any path format in backticks.
-  const re = /^- \[([ xX])\]\s+\*\*(\d+(?:\.\d+)*)\*\*\s+(.+?)(?:\s+`([^`]+)`)?\s*(?:(?:<-|←).*)?$/gm;
+// One task: `- [ ] **1.2** description `optional/file` <- optional ref`.
+// Allows backtick-quoted terms inside descriptions; the LAST backtick-quoted
+// value is the file reference. Supports multi-level IDs (1.2.3).
+const TASK_LINE = /^- \[([ xX])\]\s+\*\*(\d+(?:\.\d+)*)\*\*\s+(.+?)(?:\s+`([^`]+)`)?\s*(?:(?:<-|←).*)?$/;
+
+// A list item carrying a checkbox, whatever its bullet, indent or state.
+const CHECKBOX_LINE = /^\s*(?:[-*+]|\d+[.)])\s+\[.?\]/;
+
+/** Every task in `content`, with the offset of the line it starts on. */
+function matchTasks(content) {
+  const matches = [];
+  const re = new RegExp(TASK_LINE.source, 'gm');
   let m;
   while ((m = re.exec(content))) {
-    tasks.push({
-      done: m[1].toLowerCase() === 'x',
-      id: m[2],
-      desc: m[3].trim(),
-      file: m[4] || null,
+    matches.push({
+      index: m.index,
+      task: {
+        done: m[1].toLowerCase() === 'x',
+        id: m[2],
+        desc: m[3].trim(),
+        file: m[4] || null,
+      },
     });
   }
-  return tasks;
+  return matches;
+}
+
+export function parseTasks(content) {
+  if (!content) return [];
+  return matchTasks(content).map(m => m.task);
+}
+
+/**
+ * Checkbox lines that `parseTasks` does not turn into a task. They read as
+ * tasks to a person, so a spec made only of them looks finished to the tool.
+ * @returns {Array<{line: number, text: string}>} 1-based line numbers
+ */
+export function findUnparsedTaskLines(content) {
+  if (!content) return [];
+  const parsedAt = new Set(matchTasks(content).map(m => m.index));
+  const unparsed = [];
+  let offset = 0;
+  for (const [i, raw] of content.split('\n').entries()) {
+    const text = raw.replace(/\r$/, '');
+    if (CHECKBOX_LINE.test(text) && !parsedAt.has(offset)) unparsed.push({ line: i + 1, text });
+    offset += raw.length + 1;
+  }
+  return unparsed;
+}
+
+/** The line shape `parseTasks` accepts, for messages that have to teach it. */
+export const TASK_FORMAT = '- [ ] **1.1** Description `path/to/file`';
+
+/**
+ * Plain-text lines describing a spec's unparsed checkbox lines; empty when it
+ * has none. Shows the first `max`: one example usually explains the rest.
+ */
+export function describeUnparsedTasks(spec, max = 3) {
+  const unparsed = spec.unparsedTasks;
+  if (!unparsed.length) return [];
+  const lines = [`${unparsed.length} checkbox line(s) in tasks.md are not in the task format and are ignored:`];
+  for (const u of unparsed.slice(0, max)) lines.push(`  line ${u.line}: ${u.text.trim()}`);
+  if (unparsed.length > max) lines.push(`  … +${unparsed.length - max} more`);
+  lines.push(`Expected: ${TASK_FORMAT}`);
+  return lines;
 }
 
 export function findNextPendingTask(tasks) {

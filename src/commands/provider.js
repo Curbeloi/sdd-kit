@@ -151,6 +151,7 @@ export async function providerModelsCmd({ provider: override, refresh = false, c
     }
   } catch (err) {
     console.log(chalk.red(`  Could not list models: ${err.message}`));
+    process.exitCode = 1;
   }
 
   // Agentic layer: list opencode models when it's the configured CLI or present.

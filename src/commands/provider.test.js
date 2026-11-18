@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { providerSetCmd, fetchModels } from './provider.js';
 import { resetConfig } from '../core/config.js';
-import { withTempDir } from '../test-helpers.js';
+import { withTempDir, sddWithAgents } from '../test-helpers.js';
 
 describe('providerSetCmd', () => {
   it('writes provider + model to .sddrc', async () => {
@@ -101,5 +101,27 @@ describe('fetchModels', () => {
         );
       },
     );
+  });
+});
+
+describe('sdd provider models — exit code', () => {
+  // No agents on PATH, so the opencode model listing is never attempted.
+  const models = (dir, args, env = {}) =>
+    sddWithAgents(dir, ['provider', 'models', ...args], { agents: [], env });
+
+  it('exits 1 when the provider endpoint cannot be reached', async () => {
+    await withTempDir(async (dir) => {
+      const { code, out } = await models(dir, ['--provider', 'ollama'], {
+        SDD_BASE_URL: 'http://localhost:59999/v1',
+      });
+      assert.equal(code, 1, out);
+    });
+  });
+
+  it('exits 0 when the listing needs no endpoint', async () => {
+    await withTempDir(async (dir) => {
+      const { code, out } = await models(dir, ['--provider', 'claude-cli']);
+      assert.equal(code, 0, out);
+    });
   });
 });

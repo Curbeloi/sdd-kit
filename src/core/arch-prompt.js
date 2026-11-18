@@ -57,11 +57,14 @@ export function estimateTokens(chars) {
   return Math.ceil(chars / CHARS_PER_TOKEN);
 }
 
-/** Slice `text` to `max` chars, marking the cut so the model knows it is partial. */
-function clip(text, max) {
+/**
+ * Slice `text` to `max` chars, marking the cut so the model knows it is partial.
+ * `fullAt` names where the whole text can be read, when there is such a place.
+ */
+export function clip(text, max, fullAt) {
   const s = String(text || '');
   if (s.length <= max) return s;
-  return `${s.slice(0, max)}\n…[truncated]`;
+  return `${s.slice(0, max)}\n…[truncated${fullAt ? ` — full text: ${fullAt}` : ''}]`;
 }
 
 /**
