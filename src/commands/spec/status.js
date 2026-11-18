@@ -3,7 +3,7 @@
  */
 
 import chalk from 'chalk';
-import { readAllSpecs, readSpec } from '../../core/spec-reader.js';
+import { readAllSpecs, readSpec, describeUnparsedTasks } from '../../core/spec-reader.js';
 
 export async function statusCmd({ specName, verbose, cwd = process.cwd() }) {
   if (specName) {
@@ -17,6 +17,11 @@ export async function statusCmd({ specName, verbose, cwd = process.cwd() }) {
     console.log(`\n${chalk.bold('sdd spec status')} — ${chalk.cyan(specName)}\n`);
     showSpecSummary(spec);
     showSpecTasks(spec);
+    // Checkbox lines the parser dropped are absent from the list and the count
+    // above; without this the numbers just look wrong.
+    const unparsed = describeUnparsedTasks(spec);
+    if (unparsed.length) console.log('');
+    for (const line of unparsed) console.log(chalk.yellow(`  ${line}`));
     console.log('');
     return;
   }

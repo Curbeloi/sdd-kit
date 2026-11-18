@@ -107,7 +107,7 @@ Open the generated `specs/features/feat-jwt-authentication/` and review it befor
 sdd spec execute feat-jwt-authentication   # runs the next pending task
 ```
 
-Repeat until every task is checked off. Each run sends the task plus its requirements, design, and module context to the engine, then auto-refreshes docs.
+Repeat until every task is checked off. Each run sends the task plus its requirements, design, and module context to the engine, then auto-refreshes docs. A run exits non-zero if the agent leaves the task unchecked, so a loop stops instead of repeating it.
 
 ### Step 6 — Track & visualize
 
@@ -299,7 +299,7 @@ Indicators: **R** = requirements.md, **D** = design.md, **T** = tasks.md (green 
 
 ### `sdd spec execute <spec-name>`
 
-Executes the next pending task via Claude Code. Sends the task description along with requirements, design, and module context so Claude has full understanding. After execution, refreshes map specs only for modules with **structural** changes (files added/deleted) — tunable via `--refresh`.
+Executes the next pending task via the configured agentic CLI (Claude Code by default). The prompt carries the task, the spec's `requirements.md` and `design.md` (whole, up to 20,000 characters each), an excerpt of the module map, and the path of the spec, so the agent can read anything that was cut. After execution, refreshes map specs only for modules with **structural** changes (files added/deleted) — tunable via `--refresh`.
 
 ```bash
 # Next pending task
@@ -317,6 +317,20 @@ sdd spec execute feat-jwt-auth --refresh=off
 # Old behavior — refresh on any changed file
 sdd spec execute feat-jwt-auth --refresh=auto
 ```
+
+After the agent finishes, sdd re-reads `tasks.md` to confirm the task was ticked. It never ticks the task itself.
+
+| Outcome | Exit code |
+|---|---|
+| Task ran and the agent ticked it | `0` |
+| Every task was already done | `0` |
+| Configured CLI not installed — fell back to prompt-only | `0` |
+| Agent failed or timed out | `1` |
+| Agent finished but left the task unchecked | `1` |
+| `--task` names an ID that isn't in the spec | `1` |
+| `tasks.md` defines no tasks | `1` |
+
+Checkbox lines that don't follow the [task format](#task-format) are not tasks to sdd. `execute` and `status <spec-name>` list them with their line numbers instead of dropping them silently.
 
 ### `sdd spec refresh [dir]`
 
@@ -501,7 +515,7 @@ Available options:
 | `base_url`, `api_key_env` | per-provider | OpenAI-compatible endpoint + key env var |
 | `agent_cli` | `claude` | Agentic CLI for `create`/`execute`/`arch` (`claude` \| `opencode`) |
 | `agent_model` | inherit | Model for the agentic CLI (e.g. Claude Code alias `sonnet`/`opus`) |
-| `agent_max_budget_usd` | `1.0` | Spend cap per agentic run (`create`/`execute`/`arch`) |
+| `agent_max_budget_usd` | `1.0` | Spend cap per agentic run. `arch` always applies it. `execute` applies it only when you set it yourself (`.sddrc` or `SDD_AGENT_MAX_BUDGET_USD`); left at the default, `execute` runs uncapped, because a task cut short leaves the tree half-edited |
 
 ### `sdd doctor`
 
@@ -586,7 +600,7 @@ The commands that actually write code/specs run through an agentic CLI. Default 
 { "agent_cli": "opencode", "agent_model": "anthropic/claude-sonnet-4-6" }
 ```
 
-`sdd spec execute` / `create` / `arch` then shell out to `opencode run` (model format is `provider/model`). If the configured CLI isn't installed, these commands fall back to **prompt-only** mode (`--prompt-only`).
+`sdd spec execute` / `create` / `arch` then shell out to `opencode run` (model format is `provider/model`). If the configured CLI isn't installed, these commands fall back to **prompt-only** mode (`--prompt-only`) and say which binary they looked for.
 
 > Leave `agent_model` empty to inherit the CLI's own default model (e.g. your Claude Code default). For `claude`, set a Claude Code alias (`sonnet`/`opus`/`haiku`); for `opencode`, use `provider/model`.
 

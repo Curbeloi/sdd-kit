@@ -1,13 +1,15 @@
 /**
- * sdd spec execute — execute a spec task via Claude Code
+ * sdd spec execute — execute a spec task via the configured agentic CLI
  */
 
 import chalk from 'chalk';
 import ora from 'ora';
 import fs from 'fs';
 import path from 'path';
-import { readSpec, findNextPendingTask, readModuleSpecs } from '../../core/spec-reader.js';
-import { generateExecutePrompt, executeTask, detectMode, Mode } from '../../core/generator.js';
+import {
+  readSpec, findNextPendingTask, readModuleSpecs, describeUnparsedTasks, TASK_FORMAT,
+} from '../../core/spec-reader.js';
+import { generateExecutePrompt, executeTask, detectMode, getAgentCli, Mode } from '../../core/generator.js';
 import { createProgress } from '../../core/progress.js';
 import { refreshModule } from './refresh.js';
 import { refreshSteering } from '../init.js';
@@ -22,6 +24,13 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
     return;
   }
 
+  const tasksRel = path.join(path.relative(cwd, spec.dir), 'tasks.md');
+  // Checkbox lines the parser dropped look like tasks to whoever wrote them.
+  // Say so wherever the outcome depends on which tasks exist.
+  const warnUnparsed = () => {
+    for (const line of describeUnparsedTasks(spec)) console.log(chalk.yellow(`  ${line}`));
+  };
+
   let task;
   if (taskId) {
     task = spec.tasks.find(t => t.id === taskId);
@@ -29,9 +38,19 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
       console.error(chalk.red(`\n  Task ${taskId} not found in ${specName}`));
       const ids = spec.tasks.map(t => t.id).join(', ');
       if (ids) console.log(chalk.dim(`  Available tasks: ${ids}`));
+      warnUnparsed();
       console.log('');
+      process.exitCode = 1;
       return;
     }
+  } else if (spec.tasks.length === 0) {
+    // Not "all complete": nothing was ever defined, so nothing was done.
+    console.error(chalk.red(`\n  No tasks defined in ${tasksRel}`));
+    console.log(chalk.dim(`  Add them as: ${TASK_FORMAT}`));
+    warnUnparsed();
+    console.log('');
+    process.exitCode = 1;
+    return;
   } else {
     task = findNextPendingTask(spec.tasks);
     if (!task) {
@@ -51,29 +70,43 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
     requirements: spec.files.requirements,
     design: spec.files.design,
     moduleContext,
+    cwd,
   });
 
   if (dryRun) {
     console.log(`\n${chalk.bold('Would execute:')} ${chalk.cyan(task.id)} — ${task.desc}`);
     if (task.file) console.log(chalk.dim(`  File: ${task.file}`));
+    warnUnparsed();
     console.log('');
     return;
   }
 
-  const mode = await detectMode(promptOnly);
+  const agent = getAgentCli(cwd);
+  const mode = await detectMode(promptOnly, cwd);
 
   console.log(`\n${chalk.bold('sdd spec execute')} — ${chalk.cyan(specName)} task ${task.id}\n`);
+  warnUnparsed();
 
   if (mode === Mode.CLAUDE) {
     // Snapshot git state before execution
     const snapshot = snapshotBefore(cwd);
 
-    const spinner = ora(`Executing task ${task.id} via Claude Code...`).start();
+    const spinner = ora(`Executing task ${task.id} via ${agent.label}...`).start();
     const onProgress = createProgress(spinner);
     try {
       await executeTask({ prompt, cwd, onProgress });
-      spinner.succeed(`Task ${task.id} executed by Claude Code`);
-      console.log(chalk.dim(`  Check ${path.relative(cwd, spec.dir)}/tasks.md for updated status.`));
+
+      // The agent was asked to tick the task. Check rather than trust it: an
+      // unticked task is what the next `execute` picks up again, so a loop
+      // would repeat it for as long as it is left running.
+      const marked = readSpec(cwd, specName)?.tasks.find(t => t.id === task.id)?.done === true;
+      if (marked) {
+        spinner.succeed(`Task ${task.id} executed by ${agent.label} and marked done in ${tasksRel}`);
+      } else {
+        spinner.warn(`Task ${task.id} executed by ${agent.label}, but it is still unchecked in ${tasksRel}`);
+        console.log(chalk.dim('  Review the changes, then tick it by hand or run the task again.'));
+        process.exitCode = 1;
+      }
 
       // Post-task: detect what actually changed via git diff
       const changes = getChangedSince(snapshot, cwd);
@@ -124,7 +157,12 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
       process.exitCode = 1;
     }
   } else {
-    // Fallback: save prompt into the spec's own directory (wherever it lives).
+    // Prompt-only: either asked for, or the configured CLI is not installed.
+    // The second case is a documented fallback, but it has to say it happened.
+    if (!promptOnly) {
+      console.log(chalk.yellow(`  ${agent.label} CLI (\`${agent.command}\`) not found — falling back to prompt-only mode.\n`));
+    }
+    // Save prompt into the spec's own directory (wherever it lives).
     const promptDir = spec.dir;
     fs.mkdirSync(promptDir, { recursive: true });
     const promptPath = path.join(promptDir, `execute_${task.id}_prompt.md`);
@@ -133,7 +171,7 @@ export async function executeCmd({ specName, taskId, dryRun, promptOnly, refresh
     console.log(prompt);
     console.log(chalk.dim('─'.repeat(60)));
     console.log(`\n  ${chalk.dim('Prompt saved:')} ${path.relative(cwd, promptPath)}`);
-    console.log(chalk.dim(`  Paste into Claude Code to execute this task.`));
+    console.log(chalk.dim(`  Paste it into your AI coding tool to execute this task.`));
   }
   console.log('');
 }

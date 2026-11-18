@@ -32,6 +32,13 @@ function getGitAuthor() {
   }
 }
 
+/** Today as YYYY-MM-DD in the user's own timezone (toISOString() is UTC). */
+function localDate() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 function buildHeader(fileName, specName, { description, author, date }) {
   const title = FILE_TITLES[fileName] || 'Spec';
   const lines = [`# ${title}: ${specName}`, ''];
@@ -51,7 +58,8 @@ export async function createCmd({ description, name, level = 2, cwd = process.cw
     console.error(chalk.red('\n  Provide a description or --name to create a spec.\n'));
     console.log(chalk.dim('  sdd spec create "JWT authentication"'));
     console.log(chalk.dim('  sdd spec create --name feat-jwt-auth\n'));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const specName = name || slugify(description);
@@ -59,7 +67,8 @@ export async function createCmd({ description, name, level = 2, cwd = process.cw
   if (!specName || specName === 'feat-') {
     console.error(chalk.red('\n  Could not generate a valid spec name from the description.'));
     console.log(chalk.dim('  Use --name to provide a name explicitly.\n'));
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 
   const specDir = specDestDir(cwd, specName);
@@ -70,7 +79,8 @@ export async function createCmd({ description, name, level = 2, cwd = process.cw
     if (existing.length > 0) {
       console.error(chalk.yellow(`\n  Spec "${specName}" already exists with: ${existing.join(', ')}`));
       console.log(chalk.dim('  Use a different --name or delete the existing spec.\n'));
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
   }
 
@@ -82,7 +92,7 @@ export async function createCmd({ description, name, level = 2, cwd = process.cw
   fs.mkdirSync(specDir, { recursive: true });
 
   const author = getGitAuthor();
-  const date = new Date().toISOString().slice(0, 10);
+  const date = localDate();
 
   for (const file of files) {
     const content = buildHeader(file, specName, { description, author, date });

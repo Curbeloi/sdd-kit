@@ -14,51 +14,13 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { withTempDir, createMockSpec } from './test-helpers.js';
+import { withTempDir, createMockSpec, run, sdd } from './test-helpers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CLI = path.join(__dirname, '..', 'bin', 'sdd.js');
 const PROGRESS_URL = pathToFileURL(path.join(__dirname, 'core', 'progress.js')).href;
-
-const EXIT_TIMEOUT_MS = 20000;
-
-/**
- * Run a node process and resolve when it exits. Rejects — rather than hanging
- * the suite — if it outlives `timeoutMs`, which is the failure being guarded.
- * stdio is piped, so this also exercises the non-TTY flush path where an
- * over-eager `process.exit()` would truncate output.
- */
-function run(args, { cwd = process.cwd(), timeoutMs = EXIT_TIMEOUT_MS, env = {} } = {}) {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(process.execPath, args, {
-      cwd,
-      env: { ...process.env, SDD_LANG: 'en', NO_COLOR: '1', ...env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-    proc.stdout.on('data', (d) => { stdout += d; });
-    proc.stderr.on('data', (d) => { stderr += d; });
-
-    const timer = setTimeout(() => {
-      proc.kill('SIGKILL');
-      reject(new Error(
-        `process still alive after ${timeoutMs}ms — it printed its result but never exited.\n` +
-        `--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
-      ));
-    }, timeoutMs);
-
-    proc.on('close', (code) => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
-    proc.on('error', (err) => { clearTimeout(timer); reject(err); });
-  });
-}
-
-const sdd = (args, opts) => run([CLI, ...args], opts);
 
 describe('CLI process lifetime', () => {
   it('exits after --version', async () => {

@@ -199,6 +199,7 @@ Return ONLY the markdown content.`,
       const spinner = spinners.get(i);
       if (err) {
         spinner.fail(`  ${chalk.red('failed')}  ${label}: ${err.message}`);
+        process.exitCode = 1;   // a missing steering file is not a successful init
         return;
       }
       fs.writeFileSync(path.join(steeringDir, label), content, 'utf-8');

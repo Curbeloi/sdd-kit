@@ -5,12 +5,13 @@
  */
 
 import fs from 'fs';
+import path from 'path';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import chalk from 'chalk';
 import { debugLog } from './log.js';
 import { getConfig } from './config.js';
-import { buildArchPrompt } from './arch-prompt.js';
+import { buildArchPrompt, clip } from './arch-prompt.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -28,6 +29,7 @@ export const Mode = { CLAUDE: 'claude', PROMPT: 'prompt' };
 export const AGENT_CLIS = {
   claude: {
     command: 'claude',
+    label: 'Claude Code',
     versionArgs: ['--version'],
     parse: 'stream-json',
     promptVia: 'stdin',   // `-p` with no value reads the prompt from stdin
@@ -40,6 +42,7 @@ export const AGENT_CLIS = {
   },
   opencode: {
     command: 'opencode',
+    label: 'opencode',
     versionArgs: ['--version'],
     parse: 'opencode-json',
     promptVia: 'argv',
@@ -128,7 +131,8 @@ export function extractAgentError(stdout = '', stderr = '') {
   };
 }
 
-function getAgentCli(cwd) {
+/** Descriptor of the configured agentic CLI (`command`, `label`, …). */
+export function getAgentCli(cwd) {
   const { agentCli } = getConfig(cwd);
   return AGENT_CLIS[agentCli] || AGENT_CLIS.claude;
 }
@@ -511,29 +515,40 @@ export async function generateArchitecture({ promptOnly, cwd, moduleSpecs, steer
   return { mode, prompt, stats };
 }
 
-export function generateExecutePrompt({ spec, task, requirements, design, moduleContext }) {
+// Requirements and design are the contract the task is built against, so they
+// travel whole unless unusually large. The module map is background.
+const EXECUTE_DOC_CHARS = 20000;
+const EXECUTE_MODULE_CHARS = 3000;
+
+export function generateExecutePrompt({ spec, task, requirements, design, moduleContext, cwd = process.cwd() }) {
+  // Paths as the agent will see them from its working directory. A spec can
+  // live in any type folder (features/, bugfix/, …), so never rebuild the path.
+  const specRel = path.relative(cwd, spec.dir);
+  const inSpec = (file) => path.join(specRel, file);
+  const { modulesDir } = getConfig(cwd);
+
   const contextParts = [];
-  if (requirements) contextParts.push(`## Requirements\n${requirements.slice(0, 1500)}`);
-  if (design) contextParts.push(`## Design\n${design.slice(0, 1500)}`);
-  if (moduleContext) contextParts.push(`## Module Specs (living documentation)\n${moduleContext.slice(0, 3000)}`);
+  if (requirements) contextParts.push(`## Requirements\n${clip(requirements, EXECUTE_DOC_CHARS, inSpec('requirements.md'))}`);
+  if (design) contextParts.push(`## Design\n${clip(design, EXECUTE_DOC_CHARS, inSpec('design.md'))}`);
+  if (moduleContext) contextParts.push(`## Module Specs (living documentation)\n${clip(moduleContext, EXECUTE_MODULE_CHARS, `${modulesDir}/`)}`);
   const context = contextParts.length ? `\n\n${contextParts.join('\n\n')}` : '';
 
-  if (task) {
-    return `Execute task ${task.id}: ${task.desc}${task.file ? ` in \`${task.file}\`` : ''}.
+  return `Execute task ${task.id}: ${task.desc}${task.file ? ` in \`${task.file}\`` : ''}.
+The spec lives in ${specRel}/ — read a file in full when its excerpt below is marked as truncated.
 ${context}
-When done, mark it complete in tasks.md: change \`[ ]\` to \`[x]\` for task ${task.id}.`;
-  }
-
-  return `Find the first unchecked task in specs/features/${spec.name}/tasks.md and implement it.
-${context}
-When done, mark it \`[x]\` in tasks.md.`;
+When done, mark it complete in ${inSpec('tasks.md')}: change \`[ ]\` to \`[x]\` for task ${task.id}.`;
 }
 
 export async function executeTask({ prompt, promptOnly, cwd, onProgress }) {
   const mode = await detectMode(promptOnly, cwd);
 
   if (mode === Mode.CLAUDE) {
-    await callAgentCli(prompt, { cwd, allowedTools: 'Read,Write,Edit,Glob,Grep,Bash', onProgress });
+    // A task that edits code can cost far more than the built-in cap, and a run
+    // cut short leaves the tree half-edited. So the cap applies here only when
+    // the project chose one; the default bounds `sdd arch` alone.
+    const config = getConfig(cwd);
+    const maxBudget = config._sources.agent_max_budget_usd === 'default' ? undefined : config.agentMaxBudgetUsd;
+    await callAgentCli(prompt, { cwd, allowedTools: 'Read,Write,Edit,Glob,Grep,Bash', maxBudget, onProgress });
     return { mode };
   }
 

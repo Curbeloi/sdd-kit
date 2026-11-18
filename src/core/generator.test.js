@@ -1,6 +1,8 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { Mode, detectMode, AGENT_CLIS, parseOpencodeEvent, extractAgentError } from './generator.js';
+import {
+  Mode, detectMode, AGENT_CLIS, parseOpencodeEvent, extractAgentError, generateExecutePrompt,
+} from './generator.js';
 import { resetConfig } from './config.js';
 
 beforeEach(() => resetConfig());
@@ -161,5 +163,42 @@ describe('extractAgentError — non-context failures', () => {
   it('falls back to the error subtype when no message is carried', () => {
     const stdout = JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true });
     assert.equal(extractAgentError(stdout, '').message, 'error_during_execution');
+  });
+});
+
+describe('generateExecutePrompt', () => {
+  // The agent only knows what the prompt tells it. It used to get the first
+  // 1500 chars of the spec and the bare word "tasks.md", so it worked from cut
+  // requirements and had to guess which file to tick.
+  const task = { id: '1.2', desc: 'add the guard', file: 'src/a.js', done: false };
+  const featSpec = { name: 'feat-x', dir: '/repo/specs/features/feat-x' };
+
+  it('names the real tasks.md of a spec that lives in a type folder', () => {
+    const prompt = generateExecutePrompt({
+      cwd: '/repo',
+      spec: { name: 'fix-login', dir: '/repo/specs/bugfix/fix-login' },
+      task,
+    });
+    assert.ok(prompt.includes('specs/bugfix/fix-login/tasks.md'), prompt);
+    assert.ok(!prompt.includes('specs/features/'), prompt);
+  });
+
+  it('sends requirements longer than the old 1500-char cut whole', () => {
+    const requirements = `${'x'.repeat(5000)} LAST-REQUIREMENT`;
+    const prompt = generateExecutePrompt({ cwd: '/repo', spec: featSpec, task, requirements });
+    assert.ok(prompt.includes('LAST-REQUIREMENT'));
+  });
+
+  it('marks an oversized design as cut and says where the full file is', () => {
+    const design = 'd'.repeat(20001);
+    const prompt = generateExecutePrompt({ cwd: '/repo', spec: featSpec, task, design });
+    assert.ok(!prompt.includes(design), 'the 20001st char should not be sent');
+    assert.match(prompt, /truncated[^\n]*specs\/features\/feat-x\/design\.md/);
+  });
+
+  it('says where the module map is when the module context is cut', () => {
+    const moduleContext = 'm'.repeat(3001);
+    const prompt = generateExecutePrompt({ cwd: '/repo', spec: featSpec, task, moduleContext });
+    assert.match(prompt, /truncated[^\n]*specs\/_map/);
   });
 });

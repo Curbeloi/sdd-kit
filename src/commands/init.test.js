@@ -8,7 +8,7 @@ import {
 } from './init.js';
 import { resetConfig } from '../core/config.js';
 import { readSteering } from '../core/spec-reader.js';
-import { withTempDir } from '../test-helpers.js';
+import { withTempDir, sddWithAgents } from '../test-helpers.js';
 
 const MARKER = '<!-- sdd-kit:start -->';
 
@@ -136,6 +136,24 @@ describe('sdd init — file layout', () => {
       resetConfig();
       const steering = readSteering(dir);
       assert.ok(steering.product, 'readSteering reads docs from sdd/steering');
+    });
+  });
+});
+
+describe('sdd init --auto — exit code', () => {
+  it('exits 1 when a steering file cannot be generated', async () => {
+    await withTempDir(async (dir) => {
+      const mapDir = path.join(dir, 'specs', '_map');
+      fs.mkdirSync(mapDir, { recursive: true });
+      fs.writeFileSync(path.join(mapDir, 'src.spec.md'), '# src\n\nA module.\n');
+      const { code, out } = await sddWithAgents(dir, ['init', '--auto'], {
+        agents: [],
+        env: {
+          SDD_PROVIDER: 'openai', SDD_MODEL: 'x',
+          OPENAI_API_KEY: 'dummy', SDD_BASE_URL: 'http://localhost:59999/v1',
+        },
+      });
+      assert.equal(code, 1, out);
     });
   });
 });
